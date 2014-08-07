@@ -8,7 +8,7 @@
 	"Interfaces": [
 		{
 			"Interface": "com.deepin.api.Transfer",
-			"OutFile": "Transfer",
+			"OutFile": "transfer",
 			"XMLFile": "com.deepin.api.Transfer.xml",
 			"ObjectName": "Transfer"
 		}

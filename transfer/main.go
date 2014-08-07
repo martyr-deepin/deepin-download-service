@@ -44,7 +44,7 @@ func main() {
 	defer logger.EndTracing()
 	logger.Info("[main] Start Transfer Service")
 	if !lib.UniqueOnSystem(TRANSFER_DEST) {
-		logger.Warning("There already has an Transfer daemon running.")
+		logger.Warning("[main] There already has an Transfer daemon running.")
 		return
 	}
 
@@ -58,14 +58,14 @@ func main() {
 
 	err := dbus.InstallOnSystem(transfer)
 	if err != nil {
-		logger.Error("InstallOnSession Error")
+		logger.Error("[main] InstallOnSystem Error", err)
 		panic(err)
 	}
 
 	dbus.DealWithUnhandledMessage()
 
 	if err = dbus.Wait(); err != nil {
-		logger.Error("Lost dbus session:", err)
+		logger.Error("[main] Lost dbus session:", err)
 		os.Exit(1)
 	}
 

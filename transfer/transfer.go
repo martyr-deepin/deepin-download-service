@@ -24,6 +24,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -41,9 +42,13 @@ type Transfer struct {
 	ProcessReport func(taskid int32, detaBytes int64, finishBytes int64, totalBytes int64)
 	FinshReport   func(taskid int32, statusCode int32)
 
+	MaxTransferNumber int32
+
 	//to get an unique taskid
 	taskidgen int32
 	tasks     map[int32]*TranferTaskInfo
+	workTasks *list.List
+	waitTasks *list.List
 }
 
 const (
@@ -67,6 +72,9 @@ func GetTransfer() *Transfer {
 		_transfer = &Transfer{}
 		_transfer.taskidgen = 0
 		_transfer.tasks = map[int32]*TranferTaskInfo{}
+		_transfer.waitTasks = list.New()
+		_transfer.workTasks = list.New()
+		_transfer.MaxTransferNumber = 40
 	}
 	return _transfer
 }
@@ -121,6 +129,15 @@ func (t *Transfer) Cancel(taskid int32) int32 {
 	return ACTION_FAILED
 }
 
+func (t *Transfer) isTransferTaskExit(url string, localfile string) bool {
+	for _, task := range t.tasks {
+		if (task.url == url) && (task.localFile == localfile) {
+			return true
+		}
+	}
+	return false
+}
+
 /*
 url: url to download
 localfile: path for download file in local disk
@@ -129,19 +146,26 @@ ondup: 0 overwrite when dup
 
 return Download Status
 */
-func (t *Transfer) Download(url string, localfile string, ondup int32) (taskid int32) {
+func (t *Transfer) Download(url string, localfile string, md5 string, ondup int32) (retCode int32, taskid int32) {
+	if t.isTransferTaskExit(url, localfile) {
+		logger.Warning("Transfer Task Exit")
+		return ACTION_FAILED, -1
+	}
+
 	taskinfo := &TranferTaskInfo{}
 	taskinfo.taskid = t.newTaskid()
-	taskinfo.taskchan = make(chan int32, 20)
+	taskinfo.taskchan = make(chan int32)
+	taskinfo.md5 = md5
 	taskinfo.url = url
 	taskinfo.originLocalFilename = localfile
 	taskinfo.localFile = localfile
 	taskinfo.status = TASK_ST_RUNING
+	taskinfo.overdup = ondup
 	t.tasks[taskinfo.taskid] = taskinfo
 
-	go t.download(taskinfo, ondup)
+	go t.startTranferTask(taskinfo)
 
-	return taskinfo.taskid
+	return ACTION_SUCCESS, taskinfo.taskid
 }
 
 func (t *Transfer) QuerySize(url string) int64 {
@@ -159,15 +183,19 @@ const (
 
 type TranferTaskInfo struct {
 	taskid              int32
+	status              int32
 	url                 string
+	md5                 string
+	overdup             int32
 	fileSize            int64
 	fileName            string
 	originLocalFilename string
 	localFile           string
 	dlStatusFile        string
 
-	status   int32
 	taskchan chan int32
+
+	element *list.Element
 }
 
 type DownloadStatusInfo struct {
@@ -246,6 +274,38 @@ func (t *Transfer) remoteFileSize(url string) (int64, error) {
 	return int64(fileSize), TransferError("Get http file error. status code: " + strconv.Itoa(response.StatusCode))
 }
 
+func (t *Transfer) startTranferTask(taskinfo *TranferTaskInfo) {
+	if int32(t.workTasks.Len()) < t.MaxTransferNumber {
+		taskinfo.element = t.workTasks.PushBack(taskinfo)
+		go t.download(taskinfo)
+		return
+	}
+	taskinfo.element = t.waitTasks.PushBack(taskinfo)
+}
+
+func (t *Transfer) finishTranferTask(taskinfo *TranferTaskInfo) {
+	logger.Warningf("[finishTranferTask]: %v %v %v", taskinfo.taskid, taskinfo.url, taskinfo.status)
+	t.FinshReport(taskinfo.taskid, taskinfo.status)
+
+	if nil != taskinfo.element {
+		t.workTasks.Remove(taskinfo.element)
+	}
+	delete(t.tasks, taskinfo.taskid)
+
+	// TODO: exit transfer if all tasks finish
+
+	// Start a new task
+	element := t.waitTasks.Front()
+
+	if nil == element {
+		return
+	}
+	value := t.workTasks.Remove(element)
+	if taskinfo, ok := value.(*TranferTaskInfo); ok {
+		t.startTranferTask(taskinfo)
+	}
+}
+
 /*
 @description
     check if the file exist
@@ -255,28 +315,25 @@ func (t *Transfer) remoteFileSize(url string) (int64, error) {
     0 if remote server do not support Content-Length Header
     otherwise return the remote file size
 */
-func (t *Transfer) download(taskinfo *TranferTaskInfo, ondup int32) error {
+func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 	logger.Info("Start Download url: ", taskinfo.url)
-	err := errors.New("")
+	var err error
+	defer t.finishTranferTask(taskinfo)
+
 	taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
+
 	if err != nil {
 		logger.Error(err)
-		return err
+		taskinfo.status = TASK_FAILED
+		return
 	}
 
-	err = t.checkLocalFileDupAndDownload(taskinfo, ondup, 0)
+	err = t.checkLocalFileDupAndDownload(taskinfo, 0)
 	if err != nil {
 		taskinfo.status = TASK_FAILED
-		logger.Error("Report download task failed", err)
-		t.FinshReport(taskinfo.taskid, taskinfo.status)
-		return err
+		return
 	}
-	//Only Success Remove
-	//removedlstFile(taskinfo.dlStatusFile)
 	taskinfo.status = TASK_SUCCESS
-	logger.Warningf("FinishReport: %v", taskinfo)
-	t.FinshReport(taskinfo.taskid, taskinfo.status)
-	return nil
 }
 
 /*
@@ -290,20 +347,20 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo, ondup int32) error {
 @return
     errors when download file
 */
-func (t *Transfer) checkLocalFileDupAndDownload(taskinfo *TranferTaskInfo, ondup int32, duptime int) error {
+func (t *Transfer) checkLocalFileDupAndDownload(taskinfo *TranferTaskInfo, duptime int) error {
 	logger.Info("checkDupDownload enter")
 	if isFileExist(taskinfo.localFile) {
 		taskinfo.dlStatusFile = taskinfo.localFile + ".dlst"
 		if isFileExist(taskinfo.dlStatusFile) {
 			return t.breakpointDownloadFile(taskinfo)
 		} else {
-			if 0 == ondup {
+			if 0 == taskinfo.overdup {
 				return t.downloadFile(taskinfo)
-			} else if 1 == ondup {
+			} else if 1 == taskinfo.overdup {
 				taskinfo.localFile = taskinfo.originLocalFilename + "." + strconv.Itoa(duptime)
 				duptime += 1
 				//file name dup again, get new
-				return t.checkLocalFileDupAndDownload(taskinfo, ondup, duptime)
+				return t.checkLocalFileDupAndDownload(taskinfo, duptime)
 			} else {
 				return TransferError("Error ondup value: ")
 			}
@@ -377,7 +434,7 @@ func removedlstFile(dlStatusFile string) error {
     errors
 */
 func savedlstFile(dlStatusFile string, dlstInfo DownloadStatusInfo) error {
-	logger.Info("savedlstFile enter")
+	//	logger.Info("savedlstFile enter")
 	f, err := os.OpenFile(dlStatusFile, os.O_TRUNC|os.O_RDWR, 0666)
 	defer f.Close()
 	if err != nil {
@@ -413,7 +470,7 @@ func savedlstFile(dlStatusFile string, dlstInfo DownloadStatusInfo) error {
     error: errors
 */
 func loaddlstFile(dlStatusFile string) (DownloadStatusInfo, error) {
-	logger.Info("loaddlstFile enter")
+	//	logger.Info("loaddlstFile enter")
 	dlstfile, err := os.Open(dlStatusFile)
 	defer dlstfile.Close()
 	dlst := new(DownloadStatusInfo)
@@ -611,8 +668,21 @@ func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, ra
 	bytestr := "bytes=" + strconv.Itoa(int(rangeBegin)) + "-" + strconv.Itoa(int(rangeEnd))
 	reqest.Header.Set("Range", bytestr)
 	response, err := client.Do(reqest)
+	logger.Infof("[downloadRange]%v", bytestr)
+	retryTimes := 5
+	for i := 0; i < retryTimes; i += 1 {
+		if nil != err {
+			//&& ("EOF" == err.Error()) {
+			logger.Warningf("[downloadRange] Retry")
+			time.Sleep(500 * time.Millisecond)
+			response, err = client.Do(reqest)
+		} else {
+			break
+		}
+	}
+
 	if (nil == response) || (nil != err) {
-		logger.Error("[downloadRange] Get Http Respone Failed: %v", err)
+		logger.Errorf("[downloadRange] Get Http Respone %v Failed: %v", response, err)
 		return nil, err
 	}
 
@@ -630,7 +700,7 @@ func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, ra
 			buf = buf[0 : len(buf)+m]
 			t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
 			if e == io.EOF {
-				logger.Info("Read io.EOF: ", len(buf))
+				//logger.Info("Read io.EOF: ", len(buf))
 				break
 			}
 			if e != nil {

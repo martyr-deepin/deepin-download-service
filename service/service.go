@@ -22,12 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 package main
 
 import (
-	"errors"
-	"fmt"
-	"strings"
 	"time"
-
-	apitransfer "dbus/com/deepin/api/transfer"
 
 	"pkg.linuxdeepin.com/lib/dbus"
 )
@@ -39,71 +34,20 @@ const (
 )
 
 const (
-	TRANSFER_NAME = "com.deepin.api.Transfer"
-	TRANSFER_PATH = "/com/deepin/api/Transfer"
-)
-const (
 	C_FREE_PROCESS = int32(0x40)
 )
-
-/*
-	App/Task is list of debian packages
-	Pkg is mean single debian package
-*/
-type Pkg struct {
-	fileName     string
-	size         int64
-	downloadSize int64
-	url          string
-}
 
 const (
 	TS_FINISH = int32(0x10)
 )
 
-type Task struct {
-	id     string
-	name   string
-	status int32
-	//package
-	pkgs        []string
-	unstartPkgs []string
-	processPkgs []string
-	finishPkgs  []string
-
-	//speed statistics
-	speedStater SpeedStater
-
-	//tranferid to pkg
-	transferList []Pkg
-	pkgTransfer  map[int32]*Pkg
-
-	downloadSize int64
-	totalSize    int64
-	//storeDir
-	storeDir string
-}
-
-type SpeedStater struct {
-	lastBytes    int64
-	lastTime     time.Time
-	speedStat    [10]int64
-	historySpeed int64
-	avagerSpeed  int64
-	index        int
-}
-
 type Service struct {
-	idSeed    int64              //seed to generate taskid(string)
-	tasks     map[string](*Task) //taskid to task
-	transfers map[int32]string   //tranferID to taskid
+	tasks map[string](*Task) //taskid to task
 
 	//control the max gocontinue to download
 	maxProcess  int32
 	curProcess  int32
 	freeProcess chan int32
-
-	transferDbus *apitransfer.Transfer
 
 	//signals
 
@@ -112,7 +56,6 @@ type Service struct {
 			taskid: 任务id
 			任务下载开始时发出
 	*/
-
 	Start func(taskid string)
 
 	/*
@@ -183,11 +126,6 @@ func (p *Service) GetDBusInfo() dbus.DBusInfo {
 	}
 }
 
-func GetUrlFileName(url string) string {
-	list := strings.Split(url, "/")
-	return list[len(list)-1]
-}
-
 func (p *Service) startUpdateTaskInfoTimer() {
 	//init process update Timer
 	logger.Info("[startUpdateTaskInfoTimer] Start Timer")
@@ -203,182 +141,97 @@ func (p *Service) startUpdateTaskInfoTimer() {
 
 func (p *Service) updateTaskInfo(timer *time.Timer) {
 	//	logger.Info("[updateTaskInfo] Send progress signal per second")
-	now := time.Now()
 	for taskid, task := range p.tasks {
-		if TS_FINISH == task.status {
-			continue
-		}
-		total := len(task.pkgs)
-		finish := len(task.finishPkgs)
-		progress := int64(0)
-		if 0 != task.totalSize {
-			progress = task.downloadSize * 100 / task.totalSize
-		}
-		deta := now.Sub(task.speedStater.lastTime).Nanoseconds()
-		//计算过去10s的平均速度
-		//lastBytes
-		speed := task.speedStater.lastBytes * 1000 * 1000 * 1000 / deta
-		index := task.speedStater.index
-		task.speedStater.historySpeed = (task.speedStater.historySpeed*10 - task.speedStater.speedStat[index] + speed) / 10
-		task.speedStater.speedStat[index] = speed
-		task.speedStater.index = (index + 1) % 10
-		curSpeed := task.speedStater.historySpeed
-		task.speedStater.lastBytes = 0
-		task.speedStater.lastTime = now
-
-		logger.Info(taskid, progress, finish, total, task.downloadSize, task.totalSize, curSpeed/1024, "KByte/s")
-		p.Update(taskid, int32(progress), int32(curSpeed), int32(finish), int32(total), task.downloadSize, task.totalSize)
+		progress, curSpeed, finish, total, downloadSize, totalSize := task.RefreshStatus()
+		logger.Info(taskid, progress, finish, total, downloadSize, totalSize, curSpeed, "Byte/s")
+		p.Update(taskid, int32(progress), int32(curSpeed), int32(finish), int32(total), downloadSize, totalSize)
 	}
 	timer.Reset(1 * time.Second)
 }
 
 func (p *Service) init() {
 	logger.Info("[init] Init Service")
-	t, err := apitransfer.NewTransfer(TRANSFER_NAME, TRANSFER_PATH)
-	if nil != err {
-		p.errorHandle("", E_INIT_TRANSFER_API, err)
-		panic("[init]Connect com.deepin.api.Transfer Failed")
-	}
-	t.ConnectFinshReport(p.onPkgFinish)
-	t.ConnectProcessReport(p.onProcessReport)
-	p.transferDbus = t
+	TransferDbus().ConnectFinshReport(p.onTransferFinish)
+	TransferDbus().ConnectProcessReport(p.onProcessReport)
 	p.curProcess = 0
 	p.maxProcess = 8
 	p.freeProcess = make(chan int32, p.maxProcess+1)
 	p.tasks = map[string](*Task){}
-	p.transfers = map[int32]string{}
-
 	go p.startUpdateTaskInfoTimer()
 }
 
-func (p *Service) onProcessReport(transferID int32, detaBytes int64, finishBytes int64, totalBytes int64) {
-	taskid := p.transfers[transferID]
-	task := p.tasks[taskid]
-	if nil == task {
+func (p *Service) onProcessReport(transferID int32, detaSize int64, finishSize int64, totalSize int64) {
+	dl := QueryDownloader(transferID)
+	if nil == dl {
+		logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
 		return
 	}
-	task.downloadSize = finishBytes
-	task.speedStater.lastBytes += detaBytes
 
+	for _, task := range dl.refTasks {
+		task.UpdateDownloaderStatusHook(dl, detaSize/int64(len(dl.refTasks)), finishSize, totalSize)
+	}
 }
 
-func (p *Service) onPkgFinish(transferID int32, retCode int32) {
-	logger.Infof("[onPkgFinish] Download %v Finist with return Code %v", transferID, retCode)
-	taskid := p.transfers[transferID]
-	task := p.tasks[taskid]
-	if nil == task {
-		logger.Warning("[onPkgFinish], nil taskid with transferID: ", transferID)
+func (p *Service) onTransferFinish(transferID int32, retCode int32) {
+	logger.Infof("[onTransferFinish] Download %v Finist with return Code %v", transferID, retCode)
+
+	dl := QueryDownloader(transferID)
+	if nil == dl {
+		logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
 		return
 	}
-	pkg := task.pkgTransfer[transferID]
-	if nil == pkg {
-		logger.Warning("[onPkgFinish], nil pkg with transferID: ", transferID)
-		return
-	}
-	task.finishPkgs = append(task.finishPkgs, pkg.fileName)
 
 	p.freeProcess <- C_FREE_PROCESS
 	p.curProcess = p.curProcess - 1
-	finish := len(task.finishPkgs)
-	total := len(task.pkgs)
 
-	if finish == total {
-		task.status = TS_FINISH
-		p.Update(taskid, int32(100), int32(task.speedStater.historySpeed), int32(finish), int32(total), task.downloadSize, task.totalSize)
-		p.Finish(taskid)
+	for _, task := range dl.refTasks {
+		task.FinishDownloaderHook(dl, retCode)
 	}
-
-	if 0 != retCode {
-		p.errorHandle(taskid, 0, errors.New("Download "))
-		//if error, stop task
-		p.StopTask(taskid)
-	}
+	dl.Finish()
 }
 
 //AddTask will add download task to transfer queue and return
 //Task is list of debian packages
 //pkg is mean single debian package
-func (p *Service) AddTask(taskName string, urls []string, storeDir string) (taskid string) {
+func (p *Service) AddTask(taskName string, urls []string, sizes []int64, md5s []string, storeDir string) (taskid string) {
 	logger.Infof("[AddTask] %v", taskName)
-	task := &Task{}
-	task.name = taskName
-	task.storeDir = storeDir
-	task.pkgTransfer = map[int32](*Pkg){}
-	task.speedStater.lastTime = time.Now()
-	task.speedStater.lastBytes = 0
-	task.speedStater.index = 0
-	for _, url := range urls {
-		pkg := Pkg{}
-		pkg.url = url
-		pkg.downloadSize = 0
-		pkgName := GetUrlFileName(url)
-		logger.Infof("Add pkg: %v", pkgName)
-		pkg.fileName = pkgName
-		task.pkgs = append(task.pkgs, pkgName)
-		task.transferList = append(task.transferList, pkg)
+	task := NewTask(taskName, urls, sizes, md5s, storeDir)
+	if nil == task {
+		return ""
 	}
-	task.unstartPkgs = task.pkgs
-	taskid = p.genTaskID()
-	task.id = taskid
-	p.tasks[taskid] = task
+	logger.Infof("[AddTask] %v", taskName)
+	task.CB_Finish = p.FinishTask
+	task.CB_Cancel = p.CancelTask
+	p.tasks[task.ID] = task
+	logger.Infof("[AddTask] %v", taskName)
 	go p.startTask(task)
-	return taskid
+	return task.ID
 }
 
 //PauseTask will pause Task
 func (p *Service) PauseTask(taskid string) {
-	task := p.tasks[taskid]
-	if nil == task {
-		logger.Info("Error taskid")
-		p.errorHandle(taskid, E_INVAILD_TASKID, errors.New("Invaid Taskid"))
-		return
-	}
-
-	for transferID, _ := range task.pkgTransfer {
-		logger.Info("Pause task: ", transferID)
-		p.transferDbus.Pause(transferID)
-	}
 	p.Pause(taskid)
 }
 
 //ResumTask will Resume Task
 func (p *Service) ResumeTask(taskid string) {
-	task := p.tasks[taskid]
-	if nil == task {
-		logger.Info("Error taskid")
-		p.errorHandle(taskid, E_INVAILD_TASKID, errors.New("Invaid Taskid"))
-		return
-	}
-	logger.Info(task.pkgTransfer)
-	for transferID, _ := range task.pkgTransfer {
-		logger.Info("Resume task: ", transferID)
-		ret, err := p.transferDbus.Resume(transferID)
-		if nil != err {
-			logger.Fatal(err, ret)
-		}
-	}
 	p.Resume(taskid)
 }
 
 //StopTask will stop Task and DELETE Task
-func (p *Service) StopTask(taskid string) {
-	task := p.tasks[taskid]
-	if nil == task {
-		logger.Info("Error taskid")
-		p.errorHandle(taskid, E_INVAILD_TASKID, errors.New("Invaid Taskid"))
-		return
-	}
-
-	for transferID, _ := range task.pkgTransfer {
-		logger.Info("Cancel task: ", transferID)
-		p.transferDbus.Cancel(transferID)
-	}
-
-	for transferID, _ := range task.pkgTransfer {
-		delete(p.transfers, transferID)
-	}
-	delete(p.tasks, taskid)
+func (p *Service) CancelTask(taskid string) {
+	p.removeTask(taskid)
 	p.Stop(taskid)
+}
+
+func (p *Service) FinishTask(taskid string) {
+	p.removeTask(taskid)
+	p.Finish(taskid)
+}
+
+//removeTask will stop Task and DELETE Task
+func (p *Service) removeTask(taskid string) {
+	delete(p.tasks, taskid)
 }
 
 const (
@@ -386,11 +239,6 @@ const (
 	E_DOWNLOAD_PKG      = E_INIT_TRANSFER_API + 1
 	E_INVAILD_TASKID    = E_INIT_TRANSFER_API + 2
 )
-
-func (p *Service) genTaskID() string {
-	p.idSeed = p.idSeed + 1
-	return fmt.Sprintf("%v", p.idSeed)
-}
 
 func (p *Service) waitProcess() {
 	for {
@@ -404,37 +252,17 @@ func (p *Service) waitProcess() {
 	}
 }
 
-func (p *Service) queryTaskInfo(task *Task) {
-	for _, t := range task.transferList {
-		t.size, _ = p.transferDbus.QuerySize(t.url)
-		task.totalSize += t.size
-	}
-}
-
 func (p *Service) startTask(task *Task) {
 	logger.Infof("[startTask] %v", task)
-	p.queryTaskInfo(task)
-	p.Start(task.id)
-	for _, t := range task.transferList {
-		logger.Infof("[] Process %v/%v", p.curProcess, p.maxProcess)
+	task.querySize()
+
+	p.Start(task.ID)
+	waitNumber := task.WaitProcessNumber()
+	for i := 0; i < waitNumber; i += 1 {
 		if p.curProcess >= p.maxProcess {
 			p.waitProcess()
 		}
-		logger.Infof("[] Process %v/%v", p.curProcess, p.maxProcess)
-		transferID, err := p.transferDbus.Download(t.url, task.storeDir+"/"+t.fileName, 0)
-		if nil != err {
-			p.errorHandle(task.id, E_DOWNLOAD_PKG, err)
-			p.Stop(task.id)
-			return
-		}
-		task.pkgTransfer[transferID] = &t
-		p.transfers[transferID] = task.id
-		task.processPkgs = append(task.processPkgs, t.fileName)
 		p.curProcess++
+		task.StartSingle()
 	}
-}
-
-func (p *Service) errorHandle(taskid string, retCode int32, err error) {
-	logger.Warningf("handle Error: %v", err)
-	p.Error(taskid, retCode, err.Error())
 }

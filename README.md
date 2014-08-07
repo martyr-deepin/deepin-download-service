@@ -14,14 +14,15 @@
 
 **1.1 方法**
 
-1.1.1. AddTask（taskname string， urls []string, storeDir s tring） taskid string
-   
+1.1.1. AddTask(taskName string, urls []string, sizes []int64, md5s []string, storeDir string) (taskid string) 
     添加下载任务到下载队列中
     
-    taskname：   任务名称
-    urls：       下载的地址
-    storeDir：   存储位置
-    taskid：     返回用于标示本次下载的任务id
+    taskname:   任务名称
+    urls:       下载的地址列表
+    sizes:      下载文件大小列表（在服务器无法获取大小时生效，若能从服务器获得文件大小，则忽略该属性）
+    md5s:       下载文件MD5列表（若不为空，则下载完成后会验证md5）
+    storeDir:   存储位置
+    taskid:     返回用于标示本次下载的任务id
 
 1.1.2 PauseTask（taskid string）
    
@@ -84,6 +85,6 @@
 	发生错误时发出
 	
 	taskid: 任务id, 为空时表示与下载无关错误
-	errcode： 错误码
-	errStr： 错误描述
+	errcode: 错误码
+	errStr: 错误描述
 

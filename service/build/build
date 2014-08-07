@@ -5,6 +5,9 @@ echo "build & install deepin-download-service"
 cd ../
 go build -o deepin-download-service
 
-cd build
+cd ./dbus-factory/in.json/
+../../build/json_build.py
+
+cd ../../build
 sudo ./install
 

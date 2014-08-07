@@ -7,7 +7,9 @@
           <method name="Download">
                <arg type="s" direction="in"></arg>
                <arg type="s" direction="in"></arg>
+               <arg type="s" direction="in"></arg>
                <arg type="i" direction="in"></arg>
+               <arg type="i" direction="out"></arg>
                <arg type="i" direction="out"></arg>
           </method>
           <method name="Pause">
