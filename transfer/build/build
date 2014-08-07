@@ -1,0 +1,14 @@
+#!/bin/sh
+
+tranferBuild=$PWD
+
+echo "build & install transfer"
+
+cd ../
+go build -o transfer
+cd ./dbus-factory/in.json/
+../../build/json_build.py
+
+cd $tranferBuild
+sudo ./install
+

@@ -1,0 +1,13 @@
+#!/bin/sh
+
+rootDir=$PWD
+
+cd transfer/build
+./build
+
+cd $rootDir
+cd service/build
+./build
+
+
+

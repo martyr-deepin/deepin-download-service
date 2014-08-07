@@ -1,0 +1,7 @@
+#!/bin/sh
+
+cd ../
+cp dbus/com.deepin.download.service.service /usr/share/dbus-1/system-services/
+cp dbus/com.deepin.download.service.conf /etc/dbus-1/system.d/
+cp deepin-download-service /usr/lib/deepin-daemon/
+

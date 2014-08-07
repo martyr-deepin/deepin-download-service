@@ -1,0 +1,10 @@
+#!/bin/sh
+
+echo "build & install deepin-download-service"
+
+cd ../
+go build -o deepin-download-service
+
+cd build
+sudo ./install
+

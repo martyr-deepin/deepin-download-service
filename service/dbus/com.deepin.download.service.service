@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=com.deepin.download.service
+Exec=/usr/lib/deepin-daemon/deepin-download-service
+User=root

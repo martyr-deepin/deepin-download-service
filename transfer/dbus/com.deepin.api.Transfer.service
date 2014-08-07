@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=com.deepin.api.Transfer
+Exec=/usr/lib/deepin-api/transfer
+User=root
