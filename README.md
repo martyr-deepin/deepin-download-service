@@ -1,7 +1,7 @@
 # deepin-download-service
 
-How to build and install
-========
+**How to build and install**
+
 
 ```
 ./build
