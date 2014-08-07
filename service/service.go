@@ -33,9 +33,9 @@ import (
 )
 
 const (
-	DBUS_NAME = "com.deepin.strore.update.service"
-	DBUS_PATH = "/com/deepin/store/update/service"
-	DBUS_IFC  = "com.deepin.strore.update.service"
+	DBUS_NAME = "com.deepin.download.service"
+	DBUS_PATH = "/com/deepin/download/service"
+	DBUS_IFC  = "com.deepin.download.service"
 )
 
 const (
@@ -85,8 +85,12 @@ type Task struct {
 }
 
 type SpeedStater struct {
-	lastBytes int64
-	lastTime  time.Time
+	lastBytes    int64
+	lastTime     time.Time
+	speedStat    [10]int64
+	historySpeed int64
+	avagerSpeed  int64
+	index        int
 }
 
 type Service struct {
@@ -211,11 +215,19 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 			progress = task.downloadSize * 100 / task.totalSize
 		}
 		deta := now.Sub(task.speedStater.lastTime).Nanoseconds()
+		//计算过去10s的平均速度
+		//lastBytes
 		speed := task.speedStater.lastBytes * 1000 * 1000 * 1000 / deta
+		index := task.speedStater.index
+		task.speedStater.historySpeed = (task.speedStater.historySpeed*10 - task.speedStater.speedStat[index] + speed) / 10
+		task.speedStater.speedStat[index] = speed
+		task.speedStater.index = (index + 1) % 10
+		curSpeed := task.speedStater.historySpeed
 		task.speedStater.lastBytes = 0
 		task.speedStater.lastTime = now
-		logger.Info(taskid, progress, finish, total, task.downloadSize, task.totalSize, speed/1024, "KByte/s")
-		p.Update(taskid, int32(progress), int32(speed), int32(finish), int32(total), task.downloadSize, task.totalSize)
+
+		logger.Info(taskid, progress, finish, total, task.downloadSize, task.totalSize, curSpeed/1024, "KByte/s")
+		p.Update(taskid, int32(progress), int32(curSpeed), int32(finish), int32(total), task.downloadSize, task.totalSize)
 	}
 	timer.Reset(1 * time.Second)
 }
@@ -239,15 +251,14 @@ func (p *Service) init() {
 	go p.startUpdateTaskInfoTimer()
 }
 
-func (p *Service) onProcessReport(transferID int32, beginBytes int64, endBytes int64) {
+func (p *Service) onProcessReport(transferID int32, detaBytes int64, finishBytes int64, totalBytes int64) {
 	taskid := p.transfers[transferID]
 	task := p.tasks[taskid]
 	if nil == task {
 		return
 	}
-	currentBytes := endBytes - beginBytes
-	task.downloadSize += currentBytes
-	task.speedStater.lastBytes += currentBytes
+	task.downloadSize = finishBytes
+	task.speedStater.lastBytes += detaBytes
 
 }
 
@@ -268,8 +279,13 @@ func (p *Service) onPkgFinish(transferID int32, retCode int32) {
 
 	p.freeProcess <- C_FREE_PROCESS
 	p.curProcess = p.curProcess - 1
-	if len(task.finishPkgs) == len(task.pkgs) {
+	finish := len(task.finishPkgs)
+	total := len(task.pkgs)
+
+	if finish == total {
 		task.status = TS_FINISH
+		p.Update(taskid, int32(100), int32(task.speedStater.historySpeed), int32(finish), int32(total), task.downloadSize, task.totalSize)
+		p.Finish(taskid)
 	}
 
 	if 0 != retCode {
@@ -290,6 +306,7 @@ func (p *Service) AddTask(taskName string, urls []string, storeDir string) (task
 	task.pkgTransfer = map[int32](*Pkg){}
 	task.speedStater.lastTime = time.Now()
 	task.speedStater.lastBytes = 0
+	task.speedStater.index = 0
 	for _, url := range urls {
 		pkg := Pkg{}
 		pkg.url = url

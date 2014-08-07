@@ -29,19 +29,33 @@ import (
 	dlog "pkg.linuxdeepin.com/lib/log"
 )
 
-var logger = dlog.NewLogger("deepin-store-update-service")
+var logger = dlog.NewLogger("deepin-download-service")
+
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
-	logger.Info("deepin-store-update-service start")
+	logger.Info("[main] deepin-download-service start")
 
 	if !lib.UniqueOnSystem(DBUS_NAME) {
-		logger.Warning("There is aready a deepin-store-update-service running")
+		logger.Warning("[main] There is aready a deepin-download-service running")
 		os.Exit(0)
 	}
 	service := GetService()
 	if err := dbus.InstallOnSystem(service); nil != err {
-		logger.Error("Install system bus failed")
+		logger.Error("[main]Install system bus failed", err)
 		os.Exit(1)
+	}
+
+	logger.SetRestartCommand("/usr/lib/deepin-daemon/deepin-download-service", "--debug")
+	if stringInSlice("-d", os.Args) || stringInSlice("--debug", os.Args) {
+		logger.SetLogLevel(dlog.LEVEL_DEBUG)
 	}
 
 	dbus.DealWithUnhandledMessage()

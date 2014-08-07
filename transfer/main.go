@@ -42,7 +42,7 @@ func stringInSlice(a string, list []string) bool {
 
 func main() {
 	defer logger.EndTracing()
-
+	logger.Info("[main] Start Transfer Service")
 	if !lib.UniqueOnSystem(TRANSFER_DEST) {
 		logger.Warning("There already has an Transfer daemon running.")
 		return
@@ -67,7 +67,7 @@ func main() {
 	if err = dbus.Wait(); err != nil {
 		logger.Error("Lost dbus session:", err)
 		os.Exit(1)
-	} else {
-		os.Exit(0)
 	}
+
+	os.Exit(0)
 }

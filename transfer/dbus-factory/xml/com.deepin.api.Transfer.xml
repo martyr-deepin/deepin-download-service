@@ -26,6 +26,7 @@
                <arg type="i"></arg>
                <arg type="x"></arg>
                <arg type="x"></arg>
+               <arg type="x"></arg>
           </signal>
           <signal name="FinshReport">
                <arg type="i"></arg>

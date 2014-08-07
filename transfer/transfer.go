@@ -38,7 +38,7 @@ import (
 
 type Transfer struct {
 	//Signal
-	ProcessReport func(taskid int32, beginBytes int64, endBytes int64)
+	ProcessReport func(taskid int32, detaBytes int64, finishBytes int64, totalBytes int64)
 	FinshReport   func(taskid int32, statusCode int32)
 
 	//to get an unique taskid
@@ -266,12 +266,14 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo, ondup int32) error {
 
 	err = t.checkLocalFileDupAndDownload(taskinfo, ondup, 0)
 	if err != nil {
+		taskinfo.status = TASK_FAILED
 		logger.Error("Report download task failed", err)
 		t.FinshReport(taskinfo.taskid, taskinfo.status)
 		return err
 	}
 	//Only Success Remove
 	//removedlstFile(taskinfo.dlStatusFile)
+	taskinfo.status = TASK_SUCCESS
 	logger.Warningf("FinishReport: %v", taskinfo)
 	t.FinshReport(taskinfo.taskid, taskinfo.status)
 	return nil
@@ -511,14 +513,13 @@ func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
 
 			//			logger.Info("DownloadRange: bytes: ", beginByte, "-", endByte, "/", taskinfo.fileSize)
 
-			data, err := downloadRange(taskinfo, beginByte, endByte-1)
+			data, err := t.downloadRange(taskinfo, beginByte, endByte-1)
 			if err != nil {
 				logger.Error(err)
 				return err
 			}
 			dlfile.WriteAt(data, int64(beginByte))
 			dlfile.Sync()
-			t.ProcessReport(taskinfo.taskid, beginByte, endByte)
 			dlst.blockStat[index] = 1
 			savedlstFile(taskinfo.dlStatusFile, dlst)
 		}
@@ -603,13 +604,17 @@ func calcBlockSize(remotefilesize int64) int64 {
 @return
     error: errors
 */
-func downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, rangeEnd int64) ([]byte, error) {
+func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, rangeEnd int64) ([]byte, error) {
 	client := &http.Client{}
 	url := taskinfo.url
 	reqest, _ := http.NewRequest("GET", url, nil)
 	bytestr := "bytes=" + strconv.Itoa(int(rangeBegin)) + "-" + strconv.Itoa(int(rangeEnd))
 	reqest.Header.Set("Range", bytestr)
-	response, _ := client.Do(reqest)
+	response, err := client.Do(reqest)
+	if (nil == response) || (nil != err) {
+		logger.Error("[downloadRange] Get Http Respone Failed: %v", err)
+		return nil, err
+	}
 
 	if (response.StatusCode == 200) || (response.StatusCode == 206) {
 		//		logger.Info("Response Headers: ", response.Header)
@@ -623,6 +628,7 @@ func downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, rangeEnd int64) 
 			}
 			m, e := response.Body.Read(buf[len(buf):cap(buf)])
 			buf = buf[0 : len(buf)+m]
+			t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
 			if e == io.EOF {
 				logger.Info("Read io.EOF: ", len(buf))
 				break
