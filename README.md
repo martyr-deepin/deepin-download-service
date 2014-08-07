@@ -1,1 +1,8 @@
-# deepin-store-update-service
+# deepin-download-service
+
+How to build and install
+========
+
+```
+./build
+```
