@@ -77,7 +77,6 @@ func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir 
 		setSize = false
 	}
 
-	logger.Infof("[AddTask]")
 	//TODO: delete the same urls
 	for i, url := range urls {
 		md5 := ""
@@ -91,13 +90,10 @@ func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir 
 
 		dl := GetDownloader(url, size, md5, storeDir, "")
 
-		logger.Infof("[AddTask] %v", dl)
 		task.downloaders[dl.ID] = dl
 		task.waitDownloaders[dl.ID] = dl
-		logger.Infof("[AddTask]")
 		dl.RefTask(task)
 	}
-	logger.Infof("[AddTask]")
 	task.status.total = int32(len(task.downloaders))
 	return task
 }
@@ -105,7 +101,11 @@ func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir 
 func (p *Task) querySize() error {
 	p.status.totalSize = 0
 	for _, dl := range p.downloaders {
-		p.status.totalSize += dl.QuerySize()
+		if 0 != dl.totalSize {
+			p.status.totalSize += dl.totalSize
+		} else {
+			p.status.totalSize += dl.QuerySize()
+		}
 	}
 	return nil
 }

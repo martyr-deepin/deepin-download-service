@@ -30,7 +30,7 @@
                <arg type="x"></arg>
                <arg type="x"></arg>
           </signal>
-          <signal name="FinshReport">
+          <signal name="FinishReport">
                <arg type="i"></arg>
                <arg type="i"></arg>
           </signal>

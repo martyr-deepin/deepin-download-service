@@ -30,8 +30,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"pkg.linuxdeepin.com/lib/dbus"
@@ -40,7 +42,7 @@ import (
 type Transfer struct {
 	//Signal
 	ProcessReport func(taskid int32, detaBytes int64, finishBytes int64, totalBytes int64)
-	FinshReport   func(taskid int32, statusCode int32)
+	FinishReport  func(taskid int32, statusCode int32)
 
 	MaxTransferNumber int32
 
@@ -74,7 +76,7 @@ func GetTransfer() *Transfer {
 		_transfer.tasks = map[int32]*TranferTaskInfo{}
 		_transfer.waitTasks = list.New()
 		_transfer.workTasks = list.New()
-		_transfer.MaxTransferNumber = 40
+		_transfer.MaxTransferNumber = 32
 	}
 	return _transfer
 }
@@ -138,6 +140,20 @@ func (t *Transfer) isTransferTaskExit(url string, localfile string) bool {
 	return false
 }
 
+func VerifyMD5(file string) string {
+	cmdline := "md5sum -b " + file
+	cmd := exec.Command("/bin/sh", "-c", cmdline)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if nil != err {
+		logger.Warning("[VerifyMD5] Error: ", err)
+	}
+	logger.Warning("[VerifyMD5] ", out.String())
+	md5 := strings.Split(out.String(), " ")[0]
+	return md5
+}
+
 /*
 url: url to download
 localfile: path for download file in local disk
@@ -152,6 +168,7 @@ func (t *Transfer) Download(url string, localfile string, md5 string, ondup int3
 		return ACTION_FAILED, -1
 	}
 
+	logger.Warning("Transfer Task ADD")
 	taskinfo := &TranferTaskInfo{}
 	taskinfo.taskid = t.newTaskid()
 	taskinfo.taskchan = make(chan int32)
@@ -285,7 +302,7 @@ func (t *Transfer) startTranferTask(taskinfo *TranferTaskInfo) {
 
 func (t *Transfer) finishTranferTask(taskinfo *TranferTaskInfo) {
 	logger.Warningf("[finishTranferTask]: %v %v %v", taskinfo.taskid, taskinfo.url, taskinfo.status)
-	t.FinshReport(taskinfo.taskid, taskinfo.status)
+	t.FinishReport(taskinfo.taskid, taskinfo.status)
 
 	if nil != taskinfo.element {
 		t.workTasks.Remove(taskinfo.element)
@@ -300,7 +317,7 @@ func (t *Transfer) finishTranferTask(taskinfo *TranferTaskInfo) {
 	if nil == element {
 		return
 	}
-	value := t.workTasks.Remove(element)
+	value := t.waitTasks.Remove(element)
 	if taskinfo, ok := value.(*TranferTaskInfo); ok {
 		t.startTranferTask(taskinfo)
 	}
@@ -333,6 +350,15 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 		taskinfo.status = TASK_FAILED
 		return
 	}
+
+	//verfiy MD5
+	if 0 != len(taskinfo.md5) {
+		if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
+			taskinfo.status = TASK_FAILED
+			return
+		}
+	}
+
 	taskinfo.status = TASK_SUCCESS
 }
 

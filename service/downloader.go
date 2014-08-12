@@ -157,9 +157,7 @@ func (p *Downloader) Finish() error {
 }
 
 func (p *Downloader) RefTask(task *Task) error {
-	logger.Infof("[AddTask]")
 	p.refTasks[task.ID] = task
-	logger.Infof("[AddTask]")
 	p.Start()
 	return nil
 }

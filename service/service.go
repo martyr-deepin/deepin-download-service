@@ -151,11 +151,11 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 
 func (p *Service) init() {
 	logger.Info("[init] Init Service")
-	TransferDbus().ConnectFinshReport(p.onTransferFinish)
+	TransferDbus().ConnectFinishReport(p.onTransferFinish)
 	TransferDbus().ConnectProcessReport(p.onProcessReport)
 	p.curProcess = 0
 	p.maxProcess = 8
-	p.freeProcess = make(chan int32, p.maxProcess+1)
+	p.freeProcess = make(chan int32, 4096)
 	p.tasks = map[string](*Task){}
 	go p.startUpdateTaskInfoTimer()
 }
@@ -181,12 +181,15 @@ func (p *Service) onTransferFinish(transferID int32, retCode int32) {
 		return
 	}
 
-	p.freeProcess <- C_FREE_PROCESS
+	//when the finish task is full, this chan will block
+	//but when you start a new task, it will recover
+	//let it write async
+	go func() { p.freeProcess <- C_FREE_PROCESS }()
 	p.curProcess = p.curProcess - 1
-
 	for _, task := range dl.refTasks {
 		task.FinishDownloaderHook(dl, retCode)
 	}
+
 	dl.Finish()
 }
 
@@ -197,13 +200,12 @@ func (p *Service) AddTask(taskName string, urls []string, sizes []int64, md5s []
 	logger.Infof("[AddTask] %v", taskName)
 	task := NewTask(taskName, urls, sizes, md5s, storeDir)
 	if nil == task {
+		logger.Error("[AddTask] %v Failed", taskName)
 		return ""
 	}
-	logger.Infof("[AddTask] %v", taskName)
 	task.CB_Finish = p.FinishTask
 	task.CB_Cancel = p.CancelTask
 	p.tasks[task.ID] = task
-	logger.Infof("[AddTask] %v", taskName)
 	go p.startTask(task)
 	return task.ID
 }
@@ -247,6 +249,7 @@ func (p *Service) waitProcess() {
 	for {
 		select {
 		case processStatus := <-p.freeProcess:
+			logger.Warningf("Reading chan: %v", processStatus)
 			switch processStatus {
 			case C_FREE_PROCESS:
 				return
@@ -263,7 +266,9 @@ func (p *Service) startTask(task *Task) {
 	waitNumber := task.WaitProcessNumber()
 	for i := 0; i < waitNumber; i += 1 {
 		if p.curProcess >= p.maxProcess {
+			logger.Warningf("Wait chan: Begin")
 			p.waitProcess()
+			logger.Warningf("Wait chan: End")
 		}
 		p.curProcess++
 		task.StartSingle()
