@@ -9,13 +9,13 @@ def generate_source(json,target):
     install_dir = ''
     json_meta = []
     if target == 'qml':
-        outdir += 'qml/'
+        outdir += '../qml/'
         t_list =[]
         for i in json_header.split('.'):
             t_list.append(i.capitalize())
         path = '_'.join(t_list)
     elif target == 'golang':
-        outdir += 'go/src/'
+        outdir += '../go/src/'
         path = json_header.split('.')[-1].lower()
         json_meta = json_header.split('.')
         json_meta.pop()
@@ -34,7 +34,7 @@ def generate_source(json,target):
 
 def build(path,target,installdir):
     owd = os.getcwd()
-    work = ''
+    work = '../'
     try:
         if target == 'qml':
             work = work + target +'/'+path

@@ -168,7 +168,7 @@ func (p *Downloader) UnRefTask(task *Task) error {
 	delete(p.refTasks, task.ID)
 	if 0 == len(p.refTasks) {
 		removeDownloader(p)
-		return p.Cancel()
+		go p.Cancel()
 	}
 	return nil
 }

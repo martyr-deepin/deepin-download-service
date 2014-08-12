@@ -32,24 +32,36 @@ func GetDBus() *dlAPI.Service {
 	return _dlDBus
 }
 
-func cb_update(taskid string, progress int32, speed int32, finish int32, total int32, downloadBytes int64, totalBytes int64) {
-	fmt.Printf("%v\t%v\t%v\t%v\t%v\t%v\t%v\t\n", taskid, progress, speed, finish, total, downloadBytes, totalBytes)
+func handleUpdete(taskid string, progress int32, speed int32, finish int32, total int32, downloadBytes int64, totalBytes int64) {
+	fmt.Printf("%v  \t%v  \t%v  \t%v  \t%v  \t%v  \t%v\n", taskid, progress, speed, finish, total, downloadBytes, totalBytes)
 }
 
+var mutitotal = 2
 var mutidownload = 0
 
-func cb_DownloadMutiTaskFinish(taskid string) {
+func handleMutiTaskFinish(taskid string) {
 	mutidownload++
-	fmt.Println("Test_DownloadMutiTask Finish", taskid, mutidownload)
-	if mutidownload >= 2 {
-		fmt.Println("CB__DownloadMutiTask Finish")
+	fmt.Printf("[handleMutiTaskFinish] Task %v Finish, %v/%v", taskid, mutidownload, mutitotal)
+	if mutidownload >= mutitotal {
+		fmt.Println("MutiTask Test Pass")
 		wait <- T_PASS
+		return
+	}
+	if (mutistop + mutidownload) >= mutitotal {
+		fmt.Println("MutiTask Test Failed")
+		wait <- T_FAILED
 	}
 }
 
-func stopHandle(taskid string) {
-	fmt.Println("Stop Task Finish", taskid)
-	wait <- T_FAILED
+var mutistop = 0
+
+func handleMutiTaskStop(taskid string) {
+	fmt.Println("Stop Task ", taskid)
+	mutistop++
+	if (mutistop + mutidownload) >= 2 {
+		fmt.Println("Stop Task ", taskid)
+		wait <- T_FAILED
+	}
 }
 
 func errorHandle(taskid string, errCode int32, errStr int32) {
@@ -58,6 +70,7 @@ func errorHandle(taskid string, errCode int32, errStr int32) {
 }
 
 func waitTaskFinish(t *testing.T) {
+	wait = make(chan int32)
 	for {
 		select {
 		case ret := <-wait:
@@ -80,7 +93,6 @@ func Test_DownloadMutiTask(t *testing.T) {
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_i386.deb",
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-current_4.2-1deepin2_amd64.deb",
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-current_4.2-1deepin2_i386.deb",
-		//		"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0%2bgit20140428094643~5cd82380a4_all.deb"
 	}
 	md5s := []string{
 		"",
@@ -88,11 +100,12 @@ func Test_DownloadMutiTask(t *testing.T) {
 	sizes := []int64{
 		0,
 	}
-	dbus.ConnectUpdate(cb_update)
-	dbus.ConnectFinish(cb_DownloadMutiTaskFinish)
-	dbus.ConnectStop(stopHandle)
 
-	store := "/home/iceyer/tmp"
+	defer dbus.ConnectUpdate(handleUpdete)()
+	defer dbus.ConnectFinish(handleMutiTaskFinish)()
+	defer dbus.ConnectStop(handleMutiTaskStop)()
+
+	store := "/tmp"
 	taskid, err := GetDBus().AddTask("moon", urls, sizes, md5s, store)
 	if nil != err {
 		t.Error(err)
@@ -101,9 +114,6 @@ func Test_DownloadMutiTask(t *testing.T) {
 
 	urls = []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-current_4.2-1deepin2_amd64.deb",
-		//	"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0%2bgit20130425150127_all.deb",
-		//	"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0%2bgit20140428094643~5cd82380a4_all.deb",
-		//	"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.1%2b20140710164841~4703010818_all.deb",
 		"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0%2bgit20140428094643~5cd82380a4_all.deb",
 	}
 
@@ -115,7 +125,11 @@ func Test_DownloadMutiTask(t *testing.T) {
 	waitTaskFinish(t)
 }
 
-func cb_DownloadSIngleTaskFinish(taskid string) {
+func handleSingleTaskStop(taskid string) {
+	fmt.Println("Stop Task Finish", taskid)
+	wait <- T_FAILED
+}
+func handleSiigleTaskFinish(taskid string) {
 	fmt.Println("Test_DownloadSingleTask Finish")
 	wait <- T_PASS
 }
@@ -128,11 +142,11 @@ func Test_DownloadSingleTask(t *testing.T) {
 	}
 	md5s := []string{}
 	sizes := []int64{}
-	dbus.ConnectUpdate(cb_update)
-	dbus.ConnectFinish(cb_DownloadSIngleTaskFinish)
-	dbus.ConnectStop(stopHandle)
+	defer dbus.ConnectUpdate(handleUpdete)()
+	defer dbus.ConnectFinish(handleSiigleTaskFinish)()
+	defer dbus.ConnectStop(handleSingleTaskStop)()
 
-	store := "/home/iceyer/tmp"
+	store := "/tmp"
 	taskid, err := GetDBus().AddTask("moon", urls, sizes, md5s, store)
 	if nil != err {
 		t.Error(err)
@@ -142,12 +156,12 @@ func Test_DownloadSingleTask(t *testing.T) {
 	waitTaskFinish(t)
 }
 
-func cb_ErrorUrlFinish(taskid string) {
+func handleErrorUrlFinish(taskid string) {
 	fmt.Println("cb_ErrorUrl: ", taskid)
 	wait <- T_FAILED
 }
 
-func cb_ErrorUrlStop(taskid string) {
+func handleErrorUrlStop(taskid string) {
 	fmt.Println("cb_ErrorUrlStop:", taskid)
 	wait <- T_PASS
 }
@@ -159,11 +173,11 @@ func Test_DownloadiErrorUrl(t *testing.T) {
 	}
 	md5s := []string{}
 	sizes := []int64{}
-	dbus.ConnectUpdate(cb_update)
-	dbus.ConnectFinish(cb_ErrorUrlFinish)
-	dbus.ConnectStop(cb_ErrorUrlStop)
+	defer dbus.ConnectUpdate(handleUpdete)()
+	defer dbus.ConnectFinish(handleErrorUrlFinish)()
+	defer dbus.ConnectStop(handleErrorUrlStop)()
 
-	store := "/home/iceyer/tmp"
+	store := "/tmp"
 	taskid, err := GetDBus().AddTask("moon", urls, sizes, md5s, store)
 	if nil != err {
 		t.Error(err)

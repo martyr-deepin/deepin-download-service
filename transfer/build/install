@@ -1,7 +1,7 @@
 #!/bin/sh
 
-cp -r ../dbus-factory/in.json/go/src/com/deepin/api/transfer /usr/share/go/src/pkg/dbus/com/deepin/api/
-cp ../dbus-factory/in.json/go/pkg/linux_amd64/com/deepin/api/transfer.a /usr/lib/go/pkg/linux_amd64/dbus/com/deepin/api/
+cp -r ../dbus-factory/go/src/com/deepin/api/transfer /usr/share/go/src/pkg/dbus/com/deepin/api/
+cp ../dbus-factory/go/pkg/linux_amd64/com/deepin/api/transfer.a /usr/lib/go/pkg/linux_amd64/dbus/com/deepin/api/
 
 cp ../transfer /usr/lib/deepin-api/transfer
 cp ../dbus/com.deepin.api.Transfer.service /usr/share/dbus-1/system-services/

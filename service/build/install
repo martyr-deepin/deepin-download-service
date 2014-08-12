@@ -3,9 +3,9 @@
 mkdir -p /usr/share/go/src/pkg/dbus/com/deepin/download/
 mkdir -p /usr/lib/go/pkg/linux_amd64/dbus/com/deepin/download/
 
-cp -r ../dbus-factory/in.json/go/src/com/deepin/download/service /usr/share/go/src/pkg/dbus/com/deepin/download/
-cp ../dbus-factory/in.json/go/pkg/linux_amd64/com/deepin/download/service.a /usr/lib/go/pkg/linux_amd64/dbus/com/deepin/download/
+cp -r ../dbus-factory/go/src/com/deepin/download/service /usr/share/go/src/pkg/dbus/com/deepin/download/
+cp ../dbus-factory/go/pkg/linux_amd64/com/deepin/download/service.a /usr/lib/go/pkg/linux_amd64/dbus/com/deepin/download/
 
-cp ../service /usr/lib/deepin-daemon/service
+cp ../deepin-download-service /usr/lib/deepin-daemon/deepin-download-service
 cp ../dbus/com.deepin.download.service.service /usr/share/dbus-1/system-services/
 cp ../dbus/com.deepin.download.service.conf /etc/dbus-1/system.d/

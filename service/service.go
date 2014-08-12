@@ -221,16 +221,19 @@ func (p *Service) ResumeTask(taskid string) {
 //StopTask will stop Task and DELETE Task
 func (p *Service) CancelTask(taskid string) {
 	p.removeTask(taskid)
+	logger.Infof("[Service] Send task %v Stop signal", taskid)
 	p.Stop(taskid)
 }
 
 func (p *Service) FinishTask(taskid string) {
 	p.removeTask(taskid)
+	logger.Infof("[Service] Send task %v Finish signal", taskid)
 	p.Finish(taskid)
 }
 
 //removeTask will stop Task and DELETE Task
 func (p *Service) removeTask(taskid string) {
+	logger.Info("[Service] remove task: ", taskid)
 	delete(p.tasks, taskid)
 }
 
