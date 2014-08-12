@@ -55,7 +55,7 @@ func main() {
 
 	logger.SetRestartCommand("/usr/lib/deepin-daemon/deepin-download-service", "--debug")
 	if stringInSlice("-d", os.Args) || stringInSlice("--debug", os.Args) {
-		logger.SetLogLevel(dlog.LEVEL_DEBUG)
+		logger.SetLogLevel(dlog.LevelDebug)
 	}
 
 	dbus.DealWithUnhandledMessage()

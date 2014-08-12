@@ -12,6 +12,7 @@ type Task struct {
 	//tranferid to pkg
 	downloaders     map[string](*Downloader)
 	waitDownloaders map[string](*Downloader)
+	workDownloaders map[string](*Downloader)
 
 	CB_Finish func(string)
 	CB_Cancel func(string)
@@ -67,6 +68,7 @@ func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir 
 	task := &Task{}
 	task.downloaders = map[string](*Downloader){}
 	task.waitDownloaders = map[string](*Downloader){}
+	task.workDownloaders = map[string](*Downloader){}
 	task.ID = taskID()
 	var checkMD5 = true
 	if len(urls) != len(md5s) {
@@ -113,7 +115,9 @@ func (p *Task) querySize() error {
 func (p *Task) UpdateDownloaderStatusHook(dl *Downloader, currentSize int64, downloadSize int64, totalSize int64) {
 	p.status.speedStater.lastBits += currentSize
 	dl.downloadSize = downloadSize
-	dl.totalSize = totalSize
+	if 0 == dl.totalSize {
+		dl.totalSize = totalSize
+	}
 }
 
 func (p *Task) FinishDownloaderHook(dl *Downloader, retCode int32) {
@@ -132,6 +136,7 @@ func (p *Task) FinishDownloaderHook(dl *Downloader, retCode int32) {
 	}
 }
 
+//RefresStatus will return the progress status of task
 func (p *Task) RefreshStatus() (int32, int32, int32, int32, int64, int64) {
 	p.status.downloadSize = 0
 	p.status.totalSize = 0
@@ -149,11 +154,13 @@ func (p *Task) RefreshStatus() (int32, int32, int32, int32, int64, int64) {
 		p.status.downloadSize, p.status.totalSize
 }
 
+//Start will start all wait download
 func (p *Task) Start() error {
 	for _, dl := range p.waitDownloaders {
 		dl.Start()
 	}
 	p.waitDownloaders = map[string](*Downloader){}
+	p.workDownloaders = p.downloaders
 	return nil
 }
 
@@ -161,6 +168,7 @@ func (p *Task) WaitProcessNumber() int {
 	return len(p.waitDownloaders)
 }
 
+//StartSingle will start one download each call
 func (p *Task) StartSingle() error {
 	var startDL *Downloader
 	for _, dl := range p.waitDownloaders {
@@ -168,6 +176,7 @@ func (p *Task) StartSingle() error {
 		dl.Start()
 		break
 	}
+	p.workDownloaders[startDL.ID] = startDL
 	delete(p.waitDownloaders, startDL.ID)
 	return nil
 }
@@ -189,4 +198,16 @@ func (p *Task) Finish() error {
 		go p.CB_Finish(p.ID)
 	}
 	return nil
+}
+
+func (p *Task) Pause() {
+	for _, dl := range p.workDownloaders {
+		dl.Pause()
+	}
+}
+
+func (p *Task) Resume() {
+	for _, dl := range p.workDownloaders {
+		dl.Resume()
+	}
 }

@@ -4,6 +4,7 @@ import (
 	dlAPI "dbus/com/deepin/download/service"
 	"fmt"
 	"testing"
+	"time"
 )
 
 const (
@@ -23,6 +24,8 @@ var wait chan int32
 func GetDBus() *dlAPI.Service {
 	if nil == _dlDBus {
 		wait = make(chan int32)
+		pauseChan = make(chan int32)
+		resumeChan = make(chan int32)
 		var err error
 		_dlDBus, err = dlAPI.NewService(SERVICE_NAME, SERVICE_PATH)
 		if nil != err {
@@ -129,7 +132,7 @@ func handleSingleTaskStop(taskid string) {
 	fmt.Println("Stop Task Finish", taskid)
 	wait <- T_FAILED
 }
-func handleSiigleTaskFinish(taskid string) {
+func handleSigleTaskFinish(taskid string) {
 	fmt.Println("Test_DownloadSingleTask Finish")
 	wait <- T_PASS
 }
@@ -142,7 +145,7 @@ func Test_DownloadSingleTask(t *testing.T) {
 	md5s := []string{}
 	sizes := []int64{}
 	defer dbus.ConnectUpdate(handleUpdete)()
-	defer dbus.ConnectFinish(handleSiigleTaskFinish)()
+	defer dbus.ConnectFinish(handleSigleTaskFinish)()
 	defer dbus.ConnectStop(handleSingleTaskStop)()
 
 	store := "/tmp"
@@ -232,6 +235,86 @@ func Test_VerifyMD5Error(t *testing.T) {
 		t.Error(err)
 	}
 	t.Log(taskid)
+
+	waitTaskFinish(t)
+}
+
+var pauseChan chan int32
+
+func waitPause(t *testing.T) {
+	for {
+		select {
+		case <-pauseChan:
+			fmt.Print("Recive Pasue signal\n")
+			return
+		case <-time.After(5 * time.Second):
+			t.Error("Wait Pause signal timeout")
+			fmt.Print("Wait Pause signal timeout\n")
+			return
+		}
+	}
+}
+
+var resumeChan chan int32
+
+func waitResume(t *testing.T) {
+	for {
+		select {
+		case <-resumeChan:
+			fmt.Print("Recive Resume signal\n")
+			return
+		case <-time.After(5 * time.Second):
+			t.Error("Wait Resume signal timeout")
+			fmt.Print("Wait Resume signal timeout\n")
+			return
+		}
+	}
+}
+
+func handleSingleTaskPause(taskid string) {
+	fmt.Println("Recive Pause signal of ", taskid)
+	pauseChan <- int32(1)
+}
+
+func handleSingleTaskResume(taskid string) {
+	fmt.Println("Recive Resume signel of ", taskid)
+	resumeChan <- int32(1)
+}
+
+func Test_PauseResume(t *testing.T) {
+	dbus := GetDBus()
+	urls := []string{
+		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
+	}
+	md5s := []string{"80e7028d649cb2c81fdc4eab6a94b0c7"}
+	sizes := []int64{}
+	defer dbus.ConnectUpdate(handleUpdete)()
+	defer dbus.ConnectFinish(handleSigleTaskFinish)()
+	defer dbus.ConnectStop(handleSingleTaskStop)()
+	defer dbus.ConnectPause(handleSingleTaskPause)()
+	defer dbus.ConnectResume(handleSingleTaskResume)()
+
+	resumeChan = make(chan int32)
+	pauseChan = make(chan int32)
+	store := "/tmp"
+	taskid, err := dbus.AddTask("moon", urls, sizes, md5s, store)
+	if nil != err {
+		t.Error(err)
+	}
+	t.Log(taskid)
+	fmt.Print("Sleep 3s\n")
+	time.Sleep(3 * time.Second)
+	fmt.Print("Call PauseTask\n")
+	dbus.PauseTask(taskid)
+
+	waitPause(t)
+
+	fmt.Print("Sleep 3s\n")
+	time.Sleep(3 * time.Second)
+	fmt.Print("Call ResumeTask\n")
+	dbus.ResumeTask(taskid)
+
+	waitResume(t)
 
 	waitTaskFinish(t)
 }

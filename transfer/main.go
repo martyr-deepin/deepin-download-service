@@ -51,7 +51,7 @@ func main() {
 	// configure logger
 	logger.SetRestartCommand("/usr/lib/deepin-api/transfer", "--debug")
 	if stringInSlice("-d", os.Args) || stringInSlice("--debug", os.Args) {
-		logger.SetLogLevel(dlogger.LEVEL_DEBUG)
+		logger.SetLogLevel(dlogger.LevelDebug)
 	}
 
 	transfer := GetTransfer()

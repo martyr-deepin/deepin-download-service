@@ -212,11 +212,29 @@ func (p *Service) AddTask(taskName string, urls []string, sizes []int64, md5s []
 
 //PauseTask will pause Task
 func (p *Service) PauseTask(taskid string) {
+	task := p.tasks[taskid]
+
+	if nil == task {
+		logger.Warning("[PasueTask] nil task with taskid: ", taskid)
+		return
+	}
+
+	logger.Infof("[PauseTask] %v", taskid)
+	task.Pause()
+
 	p.Pause(taskid)
 }
 
 //ResumTask will Resume Task
 func (p *Service) ResumeTask(taskid string) {
+	task := p.tasks[taskid]
+
+	if nil == task {
+		logger.Warning("[ResumeTask] nil task with taskid: ", taskid)
+		return
+	}
+	logger.Infof("[ResumeTask] %v", taskid)
+	task.Resume()
 	p.Resume(taskid)
 }
 
