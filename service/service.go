@@ -45,10 +45,9 @@ type Service struct {
 	tasks map[string](*Task) //taskid to task
 
 	//control the max gocontinue to download
-	maxProcess  int32
-	curProcess  int32
-	freeProcess chan int32
+	maxProcess int32
 
+	taskQueue chan *Task
 	//signals
 
 	/*
@@ -153,10 +152,11 @@ func (p *Service) init() {
 	logger.Info("[init] Init Service")
 	TransferDbus().ConnectFinishReport(p.onTransferFinish)
 	TransferDbus().ConnectProcessReport(p.onProcessReport)
-	p.curProcess = 0
-	p.maxProcess = 8
-	p.freeProcess = make(chan int32, 4096)
+	p.maxProcess = 6
 	p.tasks = map[string](*Task){}
+
+	p.taskQueue = make(chan *Task, p.maxProcess)
+	go p.taskDownlowner()
 	go p.startUpdateTaskInfoTimer()
 }
 
@@ -186,7 +186,6 @@ func (p *Service) onTransferFinish(transferID int32, retCode int32) {
 	//let it write async
 	for _, task := range dl.refTasks {
 		task.FinishDownloaderHook(dl, retCode)
-		go func() { p.freeProcess <- C_FREE_PROCESS }()
 	}
 
 	dl.Finish()
@@ -276,20 +275,6 @@ const (
 	E_INVAILD_TASKID    = E_INIT_TRANSFER_API + 2
 )
 
-func (p *Service) waitProcess() {
-	for {
-		select {
-		case processStatus := <-p.freeProcess:
-			logger.Warningf("Reading chan: %v Process: %v/%v", processStatus, p.curProcess, p.maxProcess)
-			switch processStatus {
-			case C_FREE_PROCESS:
-				p.curProcess = p.curProcess - 1
-				return
-			}
-		}
-	}
-}
-
 func (p *Service) startTask(task *Task) {
 	logger.Infof("[startTask] %v", task)
 	task.querySize()
@@ -297,15 +282,20 @@ func (p *Service) startTask(task *Task) {
 	p.Start(task.ID)
 	waitNumber := task.WaitProcessNumber()
 	for i := 0; i < waitNumber; i += 1 {
-		if p.curProcess >= p.maxProcess {
-			logger.Warningf("task %v Wait chan: Begin Process: %v/%v", task, p.curProcess, p.maxProcess)
-			p.waitProcess()
-			logger.Warningf("task %v Wait chan: End Process: %v/%v", task, p.curProcess, p.maxProcess)
+		p.taskQueue <- task
+	}
+}
+
+func (p *Service) taskDownlowner() {
+	for {
+		select {
+		case task := <-p.taskQueue:
+			if task.Vaild() {
+				logger.Warning("Start Single of task ", task.ID)
+				task.StartSingle()
+			} else {
+				logger.Warning("Exit invaild task ", task.ID)
+			}
 		}
-		if !task.Vaild() {
-			break
-		}
-		task.StartSingle()
-		p.curProcess++
 	}
 }

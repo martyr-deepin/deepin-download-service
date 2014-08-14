@@ -77,6 +77,7 @@ func GetTransfer() *Transfer {
 		_transfer.waitTasks = list.New()
 		_transfer.workTasks = list.New()
 		_transfer.MaxTransferNumber = 32
+		go _transfer.startProgressReportTimer()
 	}
 	return _transfer
 }
@@ -213,6 +214,10 @@ type TranferTaskInfo struct {
 	taskchan chan int32
 
 	element *list.Element
+
+	detaSize     int64
+	downloadSize int64
+	totalSize    int64
 }
 
 type DownloadStatusInfo struct {
@@ -293,6 +298,7 @@ func (t *Transfer) remoteFileSize(url string) (int64, error) {
 
 func (t *Transfer) startTranferTask(taskinfo *TranferTaskInfo) {
 	if int32(t.workTasks.Len()) < t.MaxTransferNumber {
+		logger.Warning("Add Task to worklist", taskinfo.taskid)
 		taskinfo.element = t.workTasks.PushBack(taskinfo)
 		go t.download(taskinfo)
 		return
@@ -724,7 +730,10 @@ func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, ra
 			}
 			m, e := response.Body.Read(buf[len(buf):cap(buf)])
 			buf = buf[0 : len(buf)+m]
-			t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
+			taskinfo.detaSize += int64(m)
+			taskinfo.downloadSize = rangeBegin + int64(len(buf))
+			taskinfo.totalSize = taskinfo.fileSize
+			//			t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
 			if e == io.EOF {
 				//logger.Info("Read io.EOF: ", len(buf))
 				break
@@ -741,4 +750,33 @@ func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, ra
 		return buf, nil
 	}
 	return []byte(""), TransferError("Download url error, Http statuscode: " + strconv.Itoa(response.StatusCode))
+}
+
+func (t *Transfer) startProgressReportTimer() {
+	timer := time.NewTimer(900 * time.Millisecond)
+	for {
+		select {
+		case <-timer.C:
+			t.handleProgressReport()
+			timer.Reset(900 * time.Millisecond)
+		}
+	}
+}
+
+func (t *Transfer) handleProgressReport() {
+	//	logger.Warningf("workTask Len: %v", t.workTasks.Len())
+	for element := t.workTasks.Front(); element != nil; element = element.Next() {
+		if taskinfo, ok := element.Value.(*TranferTaskInfo); ok {
+			logger.Warning("Report Progress of", taskinfo.taskid)
+			t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
+			taskinfo.detaSize = 0
+		}
+	}
+	//	return
+	//	for _, taskinfo := range t.tasks {
+	//		logger.Warning("Report Progress of", taskinfo.taskid)
+	//		t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
+	//		taskinfo.detaSize = 0
+	//	}
+
 }
