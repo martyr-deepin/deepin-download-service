@@ -158,7 +158,6 @@ func (p *Downloader) Finish() error {
 
 func (p *Downloader) RefTask(task *Task) error {
 	p.refTasks[task.ID] = task
-	p.Start()
 	return nil
 }
 

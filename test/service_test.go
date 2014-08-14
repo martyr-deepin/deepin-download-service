@@ -318,3 +318,48 @@ func Test_PauseResume(t *testing.T) {
 
 	waitTaskFinish(t)
 }
+
+func handleMuti11Task(taskid string) {
+	fmt.Println("Finish Task", taskid)
+	wait <- T_PASS
+}
+
+func Test_DownloadMuti11Task(t *testing.T) {
+	dbus := GetDBus()
+
+	urls := []string{
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/dde-control-center/dde-control-center_0.0.3+20140813104038~053bc8ae83_amd64.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/g/go-dlib/go-dlib_0.0.4+20140813112212~527a84f2d9_amd64.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/s/startdde/startdde_0.1+20140812172244~0dd4dac0b1_amd64.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/deepin-movie/deepin-movie_0.1+20140811110444~a6058bf40f_all.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/deepin-installer/deepin-installer_1.1+20140812154137~d456f5a540_amd64.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/deepin-terminal/deepin-terminal_1.1+20140812184831~02e9a8a103_all.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/dde-daemon/dde-daemon_0.0.1+20140813152049~c893c386a4_amd64.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/deepin-qml-widgets/deepin-qml-widgets_0.0.2+20140813104315~d8f63b5560_amd64.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/deepin-gtk-theme/deepin-gtk-theme_14.07+20140811102443~6ca92f7879_all.deb",
+		"http://packages.corp.linuxdeepin.com/hourly-build/pool/main/d/deepin-software-center/deepin-software-center_3.0.1+20140813104534~b8346a9c54_all.deb",
+
+		//		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_i386.deb",
+		//		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-current_4.2-1deepin2_amd64.deb",
+		//		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
+		//		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-current_4.2-1deepin2_i386.deb",
+	}
+	md5s := []string{
+		"",
+	}
+	sizes := []int64{
+		0,
+	}
+
+	defer dbus.ConnectUpdate(handleUpdete)()
+	defer dbus.ConnectFinish(handleMutiTaskFinish)()
+	defer dbus.ConnectStop(handleSigleTaskFinish)()
+
+	store := "/tmp"
+	taskid, err := GetDBus().AddTask("moon", urls, sizes, md5s, store)
+	if nil != err {
+		t.Error(err)
+	}
+	t.Log(taskid)
+	waitTaskFinish(t)
+}

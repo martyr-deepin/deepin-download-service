@@ -184,10 +184,10 @@ func (p *Service) onTransferFinish(transferID int32, retCode int32) {
 	//when the finish task is full, this chan will block
 	//but when you start a new task, it will recover
 	//let it write async
-	go func() { p.freeProcess <- C_FREE_PROCESS }()
 	p.curProcess = p.curProcess - 1
 	for _, task := range dl.refTasks {
 		task.FinishDownloaderHook(dl, retCode)
+		go func() { p.freeProcess <- C_FREE_PROCESS }()
 	}
 
 	dl.Finish()
