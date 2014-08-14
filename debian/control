@@ -1,0 +1,13 @@
+Source: deepin-download-service
+Section: devel
+Priority: optional
+Maintainer: deepin <deepin@unknown>
+Build-Depends: debhelper (>= 8.0.0), dde-go-dbus-factory, go-dlib, dbus-generator, golang, libglib2.0-dev
+Standards-Version: 3.9.4
+Homepage: http://www.linuxdeepin.com
+
+Package: deepin-download-service
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: deepin download service
+ deepin download service

@@ -1,0 +1,5 @@
+deepin-download-service (0.1+git20140812) trusty; urgency=low
+
+  * Initial release. 
+
+ -- Deepin Packages Builder <packages@linuxdeepin.com>  Wed, 13 Aug 2014 20:16:21 +0800
