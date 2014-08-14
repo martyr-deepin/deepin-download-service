@@ -184,7 +184,6 @@ func (p *Service) onTransferFinish(transferID int32, retCode int32) {
 	//when the finish task is full, this chan will block
 	//but when you start a new task, it will recover
 	//let it write async
-	p.curProcess = p.curProcess - 1
 	for _, task := range dl.refTasks {
 		task.FinishDownloaderHook(dl, retCode)
 		go func() { p.freeProcess <- C_FREE_PROCESS }()
@@ -203,8 +202,8 @@ func (p *Service) AddTask(taskName string, urls []string, sizes []int64, md5s []
 		logger.Error("[AddTask] %v Failed", taskName)
 		return ""
 	}
-	task.CB_Finish = p.FinishTask
-	task.CB_Cancel = p.CancelTask
+	task.CB_Finish = p.finishTask
+	task.CB_Cancel = p.cancelTask
 	p.tasks[task.ID] = task
 	go p.startTask(task)
 	return task.ID
@@ -239,13 +238,27 @@ func (p *Service) ResumeTask(taskid string) {
 }
 
 //StopTask will stop Task and DELETE Task
-func (p *Service) CancelTask(taskid string) {
+func (p *Service) StopTask(taskid string) {
+	task := p.tasks[taskid]
+	if nil == task {
+		logger.Warning("[finishTask] nil task with taskid %v", taskid)
+		return
+	}
+	task.Stop()
 	p.removeTask(taskid)
 	logger.Infof("[Service] Send task %v Stop signal", taskid)
 	p.Stop(taskid)
 }
 
-func (p *Service) FinishTask(taskid string) {
+//StopTask will stop Task and DELETE Task
+func (p *Service) cancelTask(taskid string, errCode int32, errStr string) {
+	p.removeTask(taskid)
+	logger.Infof("[Service] Send task %v Stop signal", taskid)
+	p.Error(taskid, errCode, errStr)
+	p.Stop(taskid)
+}
+
+func (p *Service) finishTask(taskid string) {
 	p.removeTask(taskid)
 	logger.Infof("[Service] Send task %v Finish signal", taskid)
 	p.Finish(taskid)
@@ -267,9 +280,10 @@ func (p *Service) waitProcess() {
 	for {
 		select {
 		case processStatus := <-p.freeProcess:
-			logger.Warningf("Reading chan: %v", processStatus)
+			logger.Warningf("Reading chan: %v Process: %v/%v", processStatus, p.curProcess, p.maxProcess)
 			switch processStatus {
 			case C_FREE_PROCESS:
+				p.curProcess = p.curProcess - 1
 				return
 			}
 		}
@@ -284,11 +298,14 @@ func (p *Service) startTask(task *Task) {
 	waitNumber := task.WaitProcessNumber()
 	for i := 0; i < waitNumber; i += 1 {
 		if p.curProcess >= p.maxProcess {
-			logger.Warningf("Wait chan: Begin")
+			logger.Warningf("task %v Wait chan: Begin Process: %v/%v", task, p.curProcess, p.maxProcess)
 			p.waitProcess()
-			logger.Warningf("Wait chan: End")
+			logger.Warningf("task %v Wait chan: End Process: %v/%v", task, p.curProcess, p.maxProcess)
 		}
-		p.curProcess++
+		if !task.Vaild() {
+			break
+		}
 		task.StartSingle()
+		p.curProcess++
 	}
 }

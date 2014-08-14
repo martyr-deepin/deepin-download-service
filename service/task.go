@@ -5,17 +5,36 @@ import (
 	"time"
 )
 
+const (
+	TaskVaild   = true
+	TaskInVaild = false
+)
+
 type Task struct {
-	ID     string
-	name   string
-	status TasKStatus
+	ID      string
+	name    string
+	isVaild bool
+	status  TasKStatus
 	//tranferid to pkg
 	downloaders     map[string](*Downloader)
 	waitDownloaders map[string](*Downloader)
 	workDownloaders map[string](*Downloader)
 
 	CB_Finish func(string)
-	CB_Cancel func(string)
+	CB_Cancel func(string, int32, string)
+}
+
+type TasKStatus struct {
+	status int32
+
+	progress     int32
+	totalSize    int64
+	downloadSize int64
+	finished     int32
+	total        int32
+
+	//speed statistics
+	speedStater SpeedStater
 }
 
 type SpeedStater struct {
@@ -43,19 +62,6 @@ func (s *SpeedStater) Refresh() {
 	s.lastTime = now
 }
 
-type TasKStatus struct {
-	status int32
-
-	progress     int32
-	totalSize    int64
-	downloadSize int64
-	finished     int32
-	total        int32
-
-	//speed statistics
-	speedStater SpeedStater
-}
-
 var _taskIDSeed = int64(0x0000)
 
 func taskID() string {
@@ -66,6 +72,7 @@ func taskID() string {
 
 func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir string) *Task {
 	task := &Task{}
+	task.isVaild = TaskVaild
 	task.downloaders = map[string](*Downloader){}
 	task.waitDownloaders = map[string](*Downloader){}
 	task.workDownloaders = map[string](*Downloader){}
@@ -126,12 +133,12 @@ func (p *Task) FinishDownloaderHook(dl *Downloader, retCode int32) {
 
 	if 0 != retCode {
 		logger.Warningf("Cancel Task %v", p.ID)
-		p.Cancel()
+		p.cancel(retCode, "Download Package Error")
 		return
 	}
 
 	if p.status.finished == p.status.total {
-		p.Finish()
+		p.finish()
 		return
 	}
 }
@@ -154,6 +161,33 @@ func (p *Task) RefreshStatus() (int32, int32, int32, int32, int64, int64) {
 		p.status.downloadSize, p.status.totalSize
 }
 
+//Cancel task with error status
+func (p *Task) cancel(errCode int32, errStr string) error {
+	for _, dl := range p.downloaders {
+		dl.UnRefTask(p)
+	}
+	if nil != p.CB_Cancel {
+		go p.CB_Cancel(p.ID, errCode, errStr)
+	}
+	p.clear()
+	return nil
+}
+
+//Finish task sucess
+func (p *Task) finish() error {
+	if nil != p.CB_Finish {
+		go p.CB_Finish(p.ID)
+	}
+	p.clear()
+	return nil
+}
+
+func (p *Task) clear() {
+	p.isVaild = TaskInVaild
+	p.waitDownloaders = map[string](*Downloader){}
+	p.workDownloaders = map[string](*Downloader){}
+}
+
 //Start will start all wait download
 func (p *Task) Start() error {
 	for _, dl := range p.waitDownloaders {
@@ -170,34 +204,16 @@ func (p *Task) WaitProcessNumber() int {
 
 //StartSingle will start one download each call
 func (p *Task) StartSingle() error {
-	var startDL *Downloader
 	for _, dl := range p.waitDownloaders {
-		startDL = dl
 		dl.Start()
+		p.workDownloaders[dl.ID] = dl
+		delete(p.waitDownloaders, dl.ID)
 		break
 	}
-	p.workDownloaders[startDL.ID] = startDL
-	delete(p.waitDownloaders, startDL.ID)
 	return nil
 }
-
-//Cancel task with error status
-func (p *Task) Cancel() error {
-	for _, dl := range p.downloaders {
-		dl.UnRefTask(p)
-	}
-	if nil != p.CB_Cancel {
-		go p.CB_Cancel(p.ID)
-	}
-	return nil
-}
-
-//Finish task sucess
-func (p *Task) Finish() error {
-	if nil != p.CB_Finish {
-		go p.CB_Finish(p.ID)
-	}
-	return nil
+func (p *Task) Vaild() bool {
+	return p.isVaild
 }
 
 func (p *Task) Pause() {
@@ -210,4 +226,10 @@ func (p *Task) Resume() {
 	for _, dl := range p.workDownloaders {
 		dl.Resume()
 	}
+}
+func (p *Task) Stop() {
+	for _, dl := range p.workDownloaders {
+		dl.UnRefTask(p)
+	}
+	p.clear()
 }
