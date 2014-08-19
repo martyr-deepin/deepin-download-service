@@ -368,6 +368,18 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 	taskinfo.status = TASK_SUCCESS
 }
 
+func (t *Transfer) quickDownload(taskinfo *TranferTaskInfo) (sucess bool) {
+	logger.Infof("[qucikDownload] %v", taskinfo.localFile)
+	if 0 == len(taskinfo.md5) {
+		return false
+	}
+
+	if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
+		return false
+	}
+	return true
+}
+
 /*
 @description
     check localfile, if exist, append a num to the end of the localfile name or
@@ -382,6 +394,11 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 func (t *Transfer) checkLocalFileDupAndDownload(taskinfo *TranferTaskInfo, duptime int) error {
 	logger.Info("checkDupDownload enter")
 	if isFileExist(taskinfo.localFile) {
+		if t.quickDownload(taskinfo) {
+			logger.Infof("[qucikDownload] %v success", taskinfo.localFile)
+			return nil
+		}
+
 		taskinfo.dlStatusFile = taskinfo.localFile + ".dlst"
 		if isFileExist(taskinfo.dlStatusFile) {
 			return t.breakpointDownloadFile(taskinfo)

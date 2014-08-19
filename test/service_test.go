@@ -3,6 +3,8 @@ package main
 import (
 	dlAPI "dbus/com/deepin/download/service"
 	"fmt"
+	"os"
+	"os/user"
 	"testing"
 	"time"
 )
@@ -73,7 +75,6 @@ func errorHandle(taskid string, errCode int32, errStr int32) {
 }
 
 func waitTaskFinish(t *testing.T) {
-	wait = make(chan int32)
 	for {
 		select {
 		case ret := <-wait:
@@ -90,6 +91,7 @@ func waitTaskFinish(t *testing.T) {
 }
 
 func Test_DownloadMuti11Task(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 
 	urls := []string{
@@ -129,6 +131,7 @@ func Test_DownloadMuti11Task(t *testing.T) {
 	waitTaskFinish(t)
 }
 func Test_DownloadMutiTask(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_i386.deb",
@@ -177,6 +180,7 @@ func handleSigleTaskFinish(taskid string) {
 }
 
 func Test_DownloadSingleTask(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0+git20140428094643~5cd82380a4_all.deb",
@@ -208,6 +212,7 @@ func handleErrorUrlStop(taskid string) {
 }
 
 func Test_DownloadiErrorUrl(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb.eeorr",
@@ -238,6 +243,7 @@ func handleMD5Stop(taskid string) {
 }
 
 func Test_VerifyMD5(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
@@ -258,6 +264,7 @@ func Test_VerifyMD5(t *testing.T) {
 	waitTaskFinish(t)
 }
 func Test_VerifyMD5Error(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
@@ -321,6 +328,7 @@ func handleSingleTaskResume(taskid string) {
 }
 
 func Test_PauseResume(t *testing.T) {
+	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
@@ -335,7 +343,10 @@ func Test_PauseResume(t *testing.T) {
 
 	resumeChan = make(chan int32)
 	pauseChan = make(chan int32)
-	store := "/tmp"
+	userinfo, _ := user.Current()
+	store := userinfo.HomeDir + "/.tmp"
+	os.Mkdir(store, 0644)
+	os.Remove(store + "/monodevelop-4.0_4.2-1deepin2_amd64.deb")
 	taskid, err := dbus.AddTask("moon", urls, sizes, md5s, store)
 	if nil != err {
 		t.Error(err)
