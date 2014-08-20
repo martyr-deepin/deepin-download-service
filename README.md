@@ -38,13 +38,19 @@
 
 **1.2 信号**
 
-1.2.1 Start func(taskid string)
+1.2.1 Wait func(taskid string)
+
+	任务下载未开始,处于等待准备状态时发出
+
+	taskid: 任务id
+
+1.2.2 Start func(taskid string)
 
 	任务下载开始时发出
 
 	taskid: 任务id
 
-1.2.2 Update func(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, taotalSize int64)
+1.2.3 Update func(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, taotalSize int64)
 
     每秒钟针对每个任务发出一个更新信号
 
@@ -56,31 +62,30 @@
     downloadSize 已经下载的数据 Byte
     totalSize 总共需要下载的数据 Byte
 
-1.2.3 Finish func(taskid string)
+1.2.4 Finish func(taskid string)
 
 	任务完成时发出
 
-1.2.4 Stop func(taskid string)
-
+1.2.5 Stop func(taskid string)
 
 	任务停止时发出, 任务Stop后会被立即删除，无法再获得任务信息，
 	一般发出Stop信号，则任务任务失败
 
 	taskid: 任务id
 
-1.2.5 Pause func(taskid string)
+1.2.6 Pause func(taskid string)
 
 	任务暂停时发出
 
 	taskid: 任务id
 
-1.2.6 Resume func(taskid string)
+1.2.7 Resume func(taskid string)
 
 	任务继续时发出
 
 	taskid: 任务id
 
-1.2.7 Error func(taskid string, errcode int32, errstr string)
+1.2.8 Error func(taskid string, errcode int32, errstr string)
 
 	发生错误时发出
 

@@ -46,7 +46,7 @@ var mutidownload = 0
 
 func handleMutiTaskFinish(taskid string) {
 	mutidownload++
-	fmt.Printf("[handleMutiTaskFinish] Task %v Finish, %v/%v", taskid, mutidownload, mutitotal)
+	fmt.Printf("[handleMutiTaskFinish] Task %v Finish, %v/%v\n", taskid, mutidownload, mutitotal)
 	if mutidownload >= mutitotal {
 		fmt.Println("MutiTask Test Pass")
 		wait <- T_PASS
@@ -345,7 +345,7 @@ func Test_PauseResume(t *testing.T) {
 	pauseChan = make(chan int32)
 	userinfo, _ := user.Current()
 	store := userinfo.HomeDir + "/.tmp"
-	os.Mkdir(store, 0644)
+	os.Mkdir(store, 0755)
 	os.Remove(store + "/monodevelop-4.0_4.2-1deepin2_amd64.deb")
 	taskid, err := dbus.AddTask("moon", urls, sizes, md5s, store)
 	if nil != err {

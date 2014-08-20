@@ -42,13 +42,21 @@ const (
 )
 
 type Service struct {
-	tasks map[string](*Task) //taskid to task
-
+	tasks     map[string](*Task) //taskid to task
+	workTasks map[string](*Task)
 	//control the max gocontinue to download
-	maxProcess int32
-
-	taskQueue chan *Task
+	maxProcess    int32
+	maxTask       int32
+	taskQueue     chan *Task
+	downloadQueue chan *Downloader
 	//signals
+
+	/*
+		@signal Wait
+			taskid: 任务id
+			任务下载未开始时发出
+	*/
+	Wait func(taskid string)
 
 	/*
 		@signal Start
@@ -153,11 +161,15 @@ func (p *Service) init() {
 	TransferDbus().ConnectFinishReport(p.onTransferFinish)
 	TransferDbus().ConnectProcessReport(p.onProcessReport)
 	p.maxProcess = 6
+	p.maxTask = 1
 	p.tasks = map[string](*Task){}
+	p.workTasks = map[string](*Task){}
 
-	p.taskQueue = make(chan *Task, p.maxProcess)
+	p.taskQueue = make(chan *Task, p.maxTask)
+	p.downloadQueue = make(chan *Downloader, p.maxProcess)
 	go p.taskDownlowner()
 	go p.startUpdateTaskInfoTimer()
+	go p.downloaderDispatch()
 }
 
 func (p *Service) onProcessReport(transferID int32, detaSize int64, finishSize int64, totalSize int64) {
@@ -267,6 +279,7 @@ func (p *Service) finishTask(taskid string) {
 func (p *Service) removeTask(taskid string) {
 	logger.Info("[Service] remove task: ", taskid)
 	delete(p.tasks, taskid)
+	delete(p.workTasks, taskid)
 }
 
 const (
@@ -277,25 +290,53 @@ const (
 
 func (p *Service) startTask(task *Task) {
 	logger.Infof("[startTask] %v", task)
+	p.Wait(task.ID)
 	task.querySize()
 
-	p.Start(task.ID)
-	waitNumber := task.WaitProcessNumber()
-	for i := 0; i < waitNumber; i += 1 {
-		p.taskQueue <- task
-	}
+	p.taskQueue <- task
 }
 
 func (p *Service) taskDownlowner() {
 	for {
 		select {
 		case task := <-p.taskQueue:
-			if task.Vaild() {
+			//control the task
+			if (nil != task) && task.Vaild() {
+				for len(p.workTasks) >= int(p.maxTask) {
+					time.Sleep(1 * time.Second)
+				}
+				p.workTasks[task.ID] = task
 				logger.Warning("Start Single of task ", task.ID)
-				task.StartSingle()
+				waitNumber := task.WaitProcessNumber()
+				logger.Warning("waitNumber", waitNumber)
+				sendTaskStart := false
+				for i := 0; i < waitNumber; i += 1 {
+					dl := task.StartSingle()
+					if (nil != dl) && (DownloaderWait == dl.status) {
+						logger.Warning("send start", dl.ID)
+						p.downloadQueue <- dl
+						logger.Warning("send end", dl.ID)
+					}
+					if !sendTaskStart {
+						logger.Warning("send task start", task.ID)
+						p.Start(task.ID)
+						sendTaskStart = true
+					}
+				}
 			} else {
 				logger.Warning("Exit invaild task ", task.ID)
 			}
+
+		}
+	}
+}
+
+func (p *Service) downloaderDispatch() {
+	for {
+		select {
+		case dl := <-p.downloadQueue:
+			logger.Warning("start dl", dl.ID)
+			dl.Start()
 		}
 	}
 }

@@ -203,12 +203,11 @@ func (p *Task) WaitProcessNumber() int {
 }
 
 //StartSingle will start one download each call
-func (p *Task) StartSingle() error {
+func (p *Task) StartSingle() *Downloader {
 	for _, dl := range p.waitDownloaders {
-		dl.Start()
 		p.workDownloaders[dl.ID] = dl
 		delete(p.waitDownloaders, dl.ID)
-		break
+		return dl
 	}
 	return nil
 }

@@ -281,7 +281,7 @@ func (t *Transfer) remoteFileSize(url string) (int64, error) {
 
 	if response.StatusCode == 200 {
 		fileSizeStr := string(response.Header.Get("Content-Length"))
-		logger.Warning(fileSizeStr)
+		logger.Warningf("Remote File Size: %v", fileSizeStr)
 		size, err := strconv.Atoi(fileSizeStr)
 		if err != nil {
 			logger.Error("Set file Size")
@@ -784,7 +784,7 @@ func (t *Transfer) handleProgressReport() {
 	//	logger.Warningf("workTask Len: %v", t.workTasks.Len())
 	for element := t.workTasks.Front(); element != nil; element = element.Next() {
 		if taskinfo, ok := element.Value.(*TranferTaskInfo); ok {
-			logger.Warning("Report Progress of", taskinfo.taskid)
+			logger.Warning("Report Progress of", taskinfo.taskid, " size ", taskinfo.detaSize)
 			t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
 			taskinfo.detaSize = 0
 		}

@@ -6,8 +6,16 @@ import (
 	"strings"
 )
 
+const (
+	DownloaderWait   = int32(0xA0)
+	DownloaderStart  = int32(0xA1)
+	DownloaderFinish = int32(0xA2)
+	DownloaderCancel = int32(0xA3)
+)
+
 type Downloader struct {
 	ID           string
+	status       int32
 	transferID   int32
 	fileName     string
 	storeDir     string
@@ -43,7 +51,7 @@ func newDownloader(url string, totalSize int64, md5 string, storeDir string, fil
 	downloader.ID = downloadID()
 	downloader.fileName = fileName
 	downloader.refTasks = map[string](*Task){}
-
+	downloader.status = DownloaderWait
 	if 0 == len(fileName) {
 		downloader.fileName = GetUrlFileName(url)
 	}
@@ -120,6 +128,7 @@ func (p *Downloader) Start() error {
 	}
 	p.transferID = transferID
 	IndexDownloader(transferID, p)
+	p.status = DownloaderStart
 	return nil
 }
 
@@ -147,11 +156,15 @@ func (p *Downloader) Cancel() error {
 		ret := fmt.Sprintf("Cancel Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
 	}
+	p.status = DownloaderCancel
+	p.transferID = -1
 	return nil
 }
 
 func (p *Downloader) Finish() error {
 	p.refTasks = map[string](*Task){}
+	p.status = DownloaderFinish
+	p.transferID = -1
 	removeDownloader(p)
 	return nil
 }
