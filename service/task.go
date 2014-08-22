@@ -86,6 +86,10 @@ func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir 
 		setSize = false
 	}
 
+	if 0 == len(urls) {
+		logger.Error("[NewTask] Empty url list ", task.name, task.ID)
+	}
+
 	//TODO: delete the same urls
 	for i, url := range urls {
 		md5 := ""

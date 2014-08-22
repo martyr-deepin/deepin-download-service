@@ -150,7 +150,7 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 	//	logger.Info("[updateTaskInfo] Send progress signal per second")
 	for taskid, task := range p.tasks {
 		progress, curSpeed, finish, total, downloadSize, totalSize := task.RefreshStatus()
-		logger.Info(taskid, progress, finish, total, downloadSize, totalSize, curSpeed, "Byte/s")
+		//		logger.Info(taskid, progress, finish, total, downloadSize, totalSize, curSpeed, "Byte/s")
 		p.Update(taskid, int32(progress), int32(curSpeed), int32(finish), int32(total), downloadSize, totalSize)
 	}
 	timer.Reset(1 * time.Second)
@@ -303,6 +303,7 @@ func (p *Service) taskDownlowner() {
 			//control the task
 			if (nil != task) && task.Vaild() {
 				for len(p.workTasks) >= int(p.maxTask) {
+					logger.Warning("workTasks", len(p.workTasks), task.ID)
 					time.Sleep(1 * time.Second)
 				}
 				p.workTasks[task.ID] = task
@@ -310,6 +311,9 @@ func (p *Service) taskDownlowner() {
 				waitNumber := task.WaitProcessNumber()
 				logger.Warning("waitNumber", waitNumber)
 				sendTaskStart := false
+				if 0 == waitNumber {
+					task.cancel(1, "Null task "+task.name)
+				}
 				for i := 0; i < waitNumber; i += 1 {
 					dl := task.StartSingle()
 					if (nil != dl) && (DownloaderWait == dl.status) {
