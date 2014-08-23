@@ -106,7 +106,7 @@ func (t *Transfer) Resume(taskid int32) int32 {
 	taskinfo := t.tasks[taskid]
 	logger.Info("Resume", taskid)
 	if taskinfo != nil {
-		taskinfo.taskchan <- TASK_ST_RUNING
+		taskinfo.taskStatusChan <- TASK_ST_RUNING
 		logger.Info("Resume", taskid)
 		return ACTION_SUCCESS
 	}
@@ -117,7 +117,7 @@ func (t *Transfer) Pause(taskid int32) int32 {
 	taskinfo := t.tasks[taskid]
 	logger.Info("Pause", taskid)
 	if taskinfo != nil {
-		taskinfo.taskchan <- TASK_ST_PAUSE
+		taskinfo.taskStatusChan <- TASK_ST_PAUSE
 		return ACTION_SUCCESS
 	}
 	return ACTION_FAILED
@@ -126,7 +126,7 @@ func (t *Transfer) Pause(taskid int32) int32 {
 func (t *Transfer) Cancel(taskid int32) int32 {
 	taskinfo := t.tasks[taskid]
 	if taskinfo != nil {
-		taskinfo.taskchan <- TASK_ST_CANCEL
+		taskinfo.taskStatusChan <- TASK_ST_CANCEL
 		return ACTION_SUCCESS
 	}
 	return ACTION_FAILED
@@ -172,7 +172,7 @@ func (t *Transfer) Download(url string, localfile string, md5 string, ondup int3
 	logger.Warning("Transfer Task ADD")
 	taskinfo := &TranferTaskInfo{}
 	taskinfo.taskid = t.newTaskid()
-	taskinfo.taskchan = make(chan int32)
+	taskinfo.taskStatusChan = make(chan int32)
 	taskinfo.md5 = md5
 	taskinfo.url = url
 	taskinfo.originLocalFilename = localfile
@@ -211,7 +211,7 @@ type TranferTaskInfo struct {
 	localFile           string
 	dlStatusFile        string
 
-	taskchan chan int32
+	taskStatusChan chan int32
 
 	element *list.Element
 
@@ -329,6 +329,10 @@ func (t *Transfer) finishTranferTask(taskinfo *TranferTaskInfo) {
 	}
 }
 
+func checkftpUrl(url string) bool {
+	return strings.Contains(url, "ftp://")
+}
+
 /*
 @description
     check if the file exist
@@ -343,20 +347,28 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 	var err error
 	defer t.finishTranferTask(taskinfo)
 
-	taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
+	if checkftpUrl(taskinfo.url) {
+		err = t.ftpDownload(taskinfo)
+		if err != nil {
+			logger.Error(err)
+			taskinfo.status = TASK_FAILED
+			return
+		}
+	} else {
+		taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
 
-	if err != nil {
-		logger.Error(err)
-		taskinfo.status = TASK_FAILED
-		return
+		if err != nil {
+			logger.Error(err)
+			taskinfo.status = TASK_FAILED
+			return
+		}
+
+		err = t.checkLocalFileDupAndDownload(taskinfo, 0)
+		if err != nil {
+			taskinfo.status = TASK_FAILED
+			return
+		}
 	}
-
-	err = t.checkLocalFileDupAndDownload(taskinfo, 0)
-	if err != nil {
-		taskinfo.status = TASK_FAILED
-		return
-	}
-
 	//verfiy MD5
 	if 0 != len(taskinfo.md5) {
 		if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
@@ -559,7 +571,7 @@ func loaddlstFile(dlStatusFile string) (DownloadStatusInfo, error) {
 func checkTaskStatus(taskinfo *TranferTaskInfo) int32 {
 	for {
 		select {
-		case taskinfo.status = <-taskinfo.taskchan:
+		case taskinfo.status = <-taskinfo.taskStatusChan:
 			switch taskinfo.status {
 			case TASK_ST_CANCEL:
 				logger.Info("Tasker", taskinfo.taskid, " : Cancel\n")
@@ -663,7 +675,7 @@ func (t *Transfer) downloadFile(taskinfo *TranferTaskInfo) error {
     and block should not to small
     mini block size 2M
     max block size 8M
-@input
+input
     remotefilesize: remote file size
 @return
     error: errors
@@ -796,4 +808,8 @@ func (t *Transfer) handleProgressReport() {
 	//		taskinfo.detaSize = 0
 	//	}
 
+}
+
+func (t *Transfer) ftpDownload(taskinfo *TranferTaskInfo) error {
+	return doFtpDownload(taskinfo)
 }

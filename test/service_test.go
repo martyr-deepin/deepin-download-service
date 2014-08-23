@@ -183,7 +183,8 @@ func Test_DownloadSingleTask(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
-		"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0+git20140428094643~5cd82380a4_all.deb",
+		//		"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0+git20140428094643~5cd82380a4_all.deb",
+		"ftp://ftp.sjtu.edu.cn/ubuntu/pool/universe/q/qtm/qtm_1.3.6-1_amd64.deb",
 	}
 	md5s := []string{}
 	sizes := []int64{}
