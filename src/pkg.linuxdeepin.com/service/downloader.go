@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"pkg.linuxdeepin.com/lib/utils"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 type Downloader struct {
 	ID           string
 	status       int32
-	transferID   int32
+	transferID   string
 	fileName     string
 	storeDir     string
 	url          string
@@ -31,7 +33,7 @@ type Downloader struct {
 }
 
 const (
-	C_INVAILD_TRANSFERID = int32(-1)
+	C_INVAILD_TRANSFERID = ""
 )
 
 func GetUrlFileName(url string) string {
@@ -39,11 +41,8 @@ func GetUrlFileName(url string) string {
 	return list[len(list)-1]
 }
 
-var _downloadIDSeed = int64(0x00FF)
-
 func downloadID() string {
-	_downloadIDSeed += 1
-	return fmt.Sprintf("%v_DownloadID", _downloadIDSeed)
+	return utils.GenUuid() + "_download"
 }
 
 func newDownloader(url string, totalSize int64, md5 string, storeDir string, fileName string) *Downloader {
@@ -79,18 +78,18 @@ func GetDownloader(url string, totalSize int64, md5 string, storeDir string, fil
 	return dl
 }
 
-var _downloaderIndex map[int32](*Downloader)
+var _downloaderIndex map[string](*Downloader)
 
-func IndexDownloader(transferID int32, dl *Downloader) {
+func IndexDownloader(transferID string, dl *Downloader) {
 	if nil == _downloaderIndex {
-		_downloaderIndex = map[int32](*Downloader){}
+		_downloaderIndex = map[string](*Downloader){}
 	}
 	_downloaderIndex[transferID] = dl
 }
 
-func QueryDownloader(transferID int32) *Downloader {
+func QueryDownloader(transferID string) *Downloader {
 	if nil == _downloaderIndex {
-		_downloaderIndex = map[int32](*Downloader){}
+		_downloaderIndex = map[string](*Downloader){}
 	}
 	return _downloaderIndex[transferID]
 }
@@ -157,14 +156,14 @@ func (p *Downloader) Cancel() error {
 		return DownloadError(ret)
 	}
 	p.status = DownloaderCancel
-	p.transferID = -1
+	p.transferID = ""
 	return nil
 }
 
 func (p *Downloader) Finish() error {
 	p.refTasks = map[string](*Task){}
 	p.status = DownloaderFinish
-	p.transferID = -1
+	p.transferID = ""
 	removeDownloader(p)
 	return nil
 }

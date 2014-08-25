@@ -11,14 +11,14 @@ import (
 
 type FtpClient struct {
 	key   string
-	tasks map[int32](*TranferTaskInfo)
+	tasks map[string](*TranferTaskInfo)
 	c     *ftp.ServerConn
 }
 
 func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
 	for {
 		if 0 != len(p.tasks) {
-			time.Sleep(1 * time.Second)
+			time.Sleep(3 * time.Second)
 		} else {
 			p.tasks[taskinfo.taskid] = taskinfo
 			break
@@ -104,7 +104,7 @@ func GetFtpClient(username string, password string, addr string) (*FtpClient, er
 			logger.Error(err)
 			return nil, TransferError("Login Ftp Server Failed")
 		}
-		client.tasks = map[int32](*TranferTaskInfo){}
+		client.tasks = map[string](*TranferTaskInfo){}
 		client.key = key
 		_connectPool[key] = client
 	}

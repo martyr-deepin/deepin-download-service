@@ -1,5 +1,5 @@
 CURDIR=$(shell pwd)
-
+FIXGOPATH=$(CURDIR):$(GOPATH)
 BIN_PATH=$(CURDIR)/bin
 
 TRANSFER_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/transfer

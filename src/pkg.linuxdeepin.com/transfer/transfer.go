@@ -37,18 +37,19 @@ import (
 	"time"
 
 	"pkg.linuxdeepin.com/lib/dbus"
+	"pkg.linuxdeepin.com/lib/utils"
 )
 
 type Transfer struct {
 	//Signal
-	ProcessReport func(taskid int32, detaBytes int64, finishBytes int64, totalBytes int64)
-	FinishReport  func(taskid int32, statusCode int32)
+	ProcessReport func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
+	FinishReport  func(taskid string, statusCode int32)
 
 	MaxTransferNumber int32
 
 	//to get an unique taskid
 	taskidgen int32
-	tasks     map[int32]*TranferTaskInfo
+	tasks     map[string]*TranferTaskInfo
 	workTasks *list.List
 	waitTasks *list.List
 }
@@ -73,7 +74,7 @@ func GetTransfer() *Transfer {
 	if nil == _transfer {
 		_transfer = &Transfer{}
 		_transfer.taskidgen = 0
-		_transfer.tasks = map[int32]*TranferTaskInfo{}
+		_transfer.tasks = map[string]*TranferTaskInfo{}
 		_transfer.waitTasks = list.New()
 		_transfer.workTasks = list.New()
 		_transfer.MaxTransferNumber = 32
@@ -102,7 +103,7 @@ const (
 	TASK_ST_CANCEL = int32(2)
 )
 
-func (t *Transfer) Resume(taskid int32) int32 {
+func (t *Transfer) Resume(taskid string) int32 {
 	taskinfo := t.tasks[taskid]
 	logger.Info("Resume", taskid)
 	if taskinfo != nil {
@@ -113,7 +114,7 @@ func (t *Transfer) Resume(taskid int32) int32 {
 	return ACTION_FAILED
 }
 
-func (t *Transfer) Pause(taskid int32) int32 {
+func (t *Transfer) Pause(taskid string) int32 {
 	taskinfo := t.tasks[taskid]
 	logger.Info("Pause", taskid)
 	if taskinfo != nil {
@@ -123,7 +124,7 @@ func (t *Transfer) Pause(taskid int32) int32 {
 	return ACTION_FAILED
 }
 
-func (t *Transfer) Cancel(taskid int32) int32 {
+func (t *Transfer) Cancel(taskid string) int32 {
 	taskinfo := t.tasks[taskid]
 	if taskinfo != nil {
 		taskinfo.taskStatusChan <- TASK_ST_CANCEL
@@ -163,10 +164,10 @@ ondup: 0 overwrite when dup
 
 return Download Status
 */
-func (t *Transfer) Download(url string, localfile string, md5 string, ondup int32) (retCode int32, taskid int32) {
+func (t *Transfer) Download(url string, localfile string, md5 string, ondup int32) (retCode int32, taskid string) {
 	if t.isTransferTaskExit(url, localfile) {
 		logger.Warning("Transfer Task Exit")
-		return ACTION_FAILED, -1
+		return ACTION_FAILED, ""
 	}
 
 	logger.Warning("Transfer Task ADD")
@@ -200,7 +201,7 @@ const (
 )
 
 type TranferTaskInfo struct {
-	taskid              int32
+	taskid              string
 	status              int32
 	url                 string
 	md5                 string
@@ -235,9 +236,8 @@ type DownloadStatusInfo struct {
 @return
     a unique taskid in all transfer task
 */
-func (t *Transfer) newTaskid() int32 {
-	t.taskidgen += 1
-	return t.taskidgen
+func (t *Transfer) newTaskid() string {
+	return utils.GenUuid() + "_transfer"
 }
 
 /*
@@ -796,7 +796,7 @@ func (t *Transfer) handleProgressReport() {
 	//	logger.Warningf("workTask Len: %v", t.workTasks.Len())
 	for element := t.workTasks.Front(); element != nil; element = element.Next() {
 		if taskinfo, ok := element.Value.(*TranferTaskInfo); ok {
-			logger.Warning("Report Progress of", taskinfo.taskid, " size ", taskinfo.detaSize)
+			//logger.Warning("Report Progress of", taskinfo.taskid, " size ", taskinfo.detaSize)
 			t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
 			taskinfo.detaSize = 0
 		}

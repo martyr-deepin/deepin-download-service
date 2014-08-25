@@ -172,7 +172,7 @@ func (p *Service) init() {
 	go p.downloaderDispatch()
 }
 
-func (p *Service) onProcessReport(transferID int32, detaSize int64, finishSize int64, totalSize int64) {
+func (p *Service) onProcessReport(transferID string, detaSize int64, finishSize int64, totalSize int64) {
 	dl := QueryDownloader(transferID)
 	if nil == dl {
 		logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
@@ -184,12 +184,12 @@ func (p *Service) onProcessReport(transferID int32, detaSize int64, finishSize i
 	}
 }
 
-func (p *Service) onTransferFinish(transferID int32, retCode int32) {
+func (p *Service) onTransferFinish(transferID string, retCode int32) {
 	logger.Infof("[onTransferFinish] Download %v Finist with return Code %v", transferID, retCode)
 
 	dl := QueryDownloader(transferID)
 	if nil == dl {
-		logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
+		//	logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
 		return
 	}
 
@@ -303,8 +303,8 @@ func (p *Service) taskDownlowner() {
 			//control the task
 			if (nil != task) && task.Vaild() {
 				for len(p.workTasks) >= int(p.maxTask) {
-					logger.Warning("workTasks", len(p.workTasks), task.ID)
-					time.Sleep(1 * time.Second)
+					//	logger.Warning("workTasks", len(p.workTasks), task.ID)
+					time.Sleep(5 * time.Second)
 				}
 				p.workTasks[task.ID] = task
 				logger.Warning("Start Single of task ", task.ID)

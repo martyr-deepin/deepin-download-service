@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"time"
+
+	"pkg.linuxdeepin.com/lib/utils"
 )
 
 const (
@@ -65,9 +66,7 @@ func (s *SpeedStater) Refresh() {
 var _taskIDSeed = int64(0x0000)
 
 func taskID() string {
-	_taskIDSeed += 1
-	return fmt.Sprintf("%v_task", _taskIDSeed)
-
+	return utils.GenUuid() + "_task"
 }
 
 func NewTask(name string, urls []string, sizes []int64, md5s []string, storeDir string) *Task {
