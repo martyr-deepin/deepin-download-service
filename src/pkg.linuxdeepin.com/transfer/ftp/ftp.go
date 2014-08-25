@@ -1,5 +1,5 @@
 // Package ftp implements a FTP client as described in RFC 959.
-package main
+package ftp
 
 import (
 	"bufio"

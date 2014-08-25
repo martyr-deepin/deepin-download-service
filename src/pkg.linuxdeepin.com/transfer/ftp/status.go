@@ -1,4 +1,4 @@
-package main
+package ftp
 
 const (
 	// Positive Preliminary reply

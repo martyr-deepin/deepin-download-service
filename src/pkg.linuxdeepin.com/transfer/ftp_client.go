@@ -5,12 +5,14 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"./ftp"
 )
 
 type FtpClient struct {
 	key   string
 	tasks map[int32](*TranferTaskInfo)
-	c     *ServerConn
+	c     *ftp.ServerConn
 }
 
 func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
@@ -92,7 +94,7 @@ func GetFtpClient(username string, password string, addr string) (*FtpClient, er
 	client := _connectPool[key]
 	if nil == client {
 		client = &FtpClient{}
-		client.c, err = Connect(addr)
+		client.c, err = ftp.Connect(addr)
 		if err != nil {
 			logger.Error(err)
 			return nil, TransferError("Create Ftp Connect Failed")

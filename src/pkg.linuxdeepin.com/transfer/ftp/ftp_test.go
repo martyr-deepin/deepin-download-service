@@ -1,4 +1,4 @@
-package main
+package ftp
 
 import (
 	"io/ioutil"
