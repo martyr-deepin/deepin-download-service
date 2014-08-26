@@ -387,6 +387,19 @@ func (c *ServerConn) CurrentDir() (string, error) {
 	return msg[start+1 : end], nil
 }
 
+// Rest issues a REST FTP command to seek specified file from the remote
+// FTP server.
+//
+// The returned ReadCloser must be closed to cleanup the FTP data connection.
+func (c *ServerConn) Rest(start int64) error {
+	_, _, err := c.cmd(StatusRequestFilePending, "REST %d", start)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Retr issues a RETR FTP command to fetch the specified file from the remote
 // FTP server.
 //
@@ -399,6 +412,22 @@ func (c *ServerConn) Retr(path string) (io.ReadCloser, error) {
 
 	r := &response{conn, c}
 	return r, nil
+}
+
+// Size issues a REST FTP command to seek specified file from the remote
+// FTP server.
+//
+// The returned ReadCloser must be closed to cleanup the FTP data connection.
+func (c *ServerConn) Size(path string) (int64, error) {
+	_, message, err := c.cmd(StatusFile, "SIZE %s", path)
+	if err != nil {
+		return 0, err
+	}
+	size, err := strconv.Atoi(message)
+	if err != nil {
+		return 0, err
+	}
+	return int64(size), nil
 }
 
 // Stor issues a STOR FTP command to store a file to the remote FTP server.

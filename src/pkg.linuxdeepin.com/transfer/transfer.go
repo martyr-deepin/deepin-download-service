@@ -270,30 +270,20 @@ func isFileExist(filename string) bool {
     otherwise return the remote file size
 */
 func (t *Transfer) remoteFileSize(url string) (int64, error) {
-	logger.Info("remoteFileSize enter")
-	client := &http.Client{}
-	reqest, _ := http.NewRequest("GET", url, nil)
-	fileSize := int64(0)
-	response, _ := client.Do(reqest)
-	if nil == response {
-		return fileSize, TransferError("Http Request Error, Url: " + url)
+	client, err := GetClient(url)
+
+	if err != nil {
+		logger.Error("[remotefilesize]Get Remove Files Failed: ", err)
+		return 0, err
 	}
 
-	if response.StatusCode == 200 {
-		fileSizeStr := string(response.Header.Get("Content-Length"))
-		logger.Warningf("Remote File Size: %v", fileSizeStr)
-		size, err := strconv.Atoi(fileSizeStr)
-		if err != nil {
-			logger.Error("Set file Size")
-			fileSize = 0
-		}
-		fileSize = int64(size)
-		if 0 == fileSize {
-			logger.Warning("Maybe Server Do not support Content-Length")
-		}
-		return int64(fileSize), nil
+	size, err := client.QuerySize(url)
+	if err != nil {
+		logger.Error("[remotefilesize]Get Remove Files Failed: ", err)
+		return 0, err
 	}
-	return int64(fileSize), TransferError("Get http file error. status code: " + strconv.Itoa(response.StatusCode))
+
+	return size, nil
 }
 
 func (t *Transfer) startTranferTask(taskinfo *TranferTaskInfo) {
@@ -347,28 +337,37 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 	var err error
 	defer t.finishTranferTask(taskinfo)
 
-	if checkftpUrl(taskinfo.url) {
-		err = t.ftpDownload(taskinfo)
-		if err != nil {
-			logger.Error(err)
-			taskinfo.status = TASK_FAILED
-			return
-		}
-	} else {
-		taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
+	//	if !checkftpUrl(taskinfo.url) {
+	//	err = t.ftpDownload(taskinfo)
+	//	if err != nil {
+	//		logger.Error(err)
+	//		taskinfo.status = TASK_FAILED
+	//		return
+	//		}
+	//	} else {
+	taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
+	//	}
 
-		if err != nil {
-			logger.Error(err)
-			taskinfo.status = TASK_FAILED
-			return
-		}
+	if err != nil {
+		logger.Error(err)
+		taskinfo.status = TASK_FAILED
+		return
+	}
 
-		err = t.checkLocalFileDupAndDownload(taskinfo, 0)
-		if err != nil {
+	err = t.checkLocalFileDupAndDownload(taskinfo, 0)
+	if err != nil {
+		taskinfo.status = TASK_FAILED
+		return
+	}
+
+	//verfiy MD5
+	if 0 != len(taskinfo.md5) {
+		if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
 			taskinfo.status = TASK_FAILED
 			return
 		}
 	}
+
 	//verfiy MD5
 	if 0 != len(taskinfo.md5) {
 		if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
@@ -568,7 +567,7 @@ func loaddlstFile(dlStatusFile string) (DownloadStatusInfo, error) {
 	return *dlst, nil
 }
 
-func checkTaskStatus(taskinfo *TranferTaskInfo) int32 {
+func (taskinfo *TranferTaskInfo) checkTaskStatus() int32 {
 	for {
 		select {
 		case taskinfo.status = <-taskinfo.taskStatusChan:
@@ -617,7 +616,11 @@ func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
 
 	// TODO:
 	//if remote filesize is ZERO, should download yet
-
+	var client Client
+	client, err = GetClient(taskinfo.url)
+	request, _ := client.NewRequest(taskinfo.url)
+	request.ConnectStatusCheck(taskinfo.checkTaskStatus)
+	request.ConnectProgress(taskinfo.progress)
 	for index, value := range dlst.blockStat {
 		logger.Info("BlocakStatus[", index+1, "/", dlst.blockNum, "]: ", value)
 		if 0 == value {
@@ -629,9 +632,18 @@ func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
 				endByte = taskinfo.fileSize
 			}
 
-			//			logger.Info("DownloadRange: bytes: ", beginByte, "-", endByte, "/", taskinfo.fileSize)
-
-			data, err := t.downloadRange(taskinfo, beginByte, endByte-1)
+			var data []byte
+			data, err = request.DownloadRange(beginByte, endByte)
+			retryTime := 3
+			err = nil
+			for retryTime > 0 {
+				retryTime--
+				if nil != err {
+					data, err = request.DownloadRange(beginByte, endByte)
+				} else {
+					break
+				}
+			}
 			if err != nil {
 				logger.Error(err)
 				return err
@@ -712,6 +724,12 @@ func calcBlockSize(remotefilesize int64) int64 {
 	return blockSize
 }
 
+func (taskinfo *TranferTaskInfo) progress(deta int64, downloaded int64, total int64) {
+	taskinfo.detaSize += int64(deta)
+	taskinfo.downloadSize = downloaded
+	taskinfo.totalSize = taskinfo.fileSize
+}
+
 /*
 @description
     download a file with rangeBegin to rangeEnd
@@ -754,7 +772,7 @@ func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, ra
 		buf := make([]byte, 0, capacity*2)
 		for {
 			//checkTaskStatus will block if status is pause
-			if TASK_ST_CANCEL == checkTaskStatus(taskinfo) {
+			if TASK_ST_CANCEL == taskinfo.checkTaskStatus() {
 				return buf, TransferError("Download Cancel")
 			}
 			m, e := response.Body.Read(buf[len(buf):cap(buf)])
@@ -762,7 +780,7 @@ func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, ra
 			taskinfo.detaSize += int64(m)
 			taskinfo.downloadSize = rangeBegin + int64(len(buf))
 			taskinfo.totalSize = taskinfo.fileSize
-			//			t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
+			//t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
 			if e == io.EOF {
 				//logger.Info("Read io.EOF: ", len(buf))
 				break
@@ -801,15 +819,4 @@ func (t *Transfer) handleProgressReport() {
 			taskinfo.detaSize = 0
 		}
 	}
-	//	return
-	//	for _, taskinfo := range t.tasks {
-	//		logger.Warning("Report Progress of", taskinfo.taskid)
-	//		t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
-	//		taskinfo.detaSize = 0
-	//	}
-
-}
-
-func (t *Transfer) ftpDownload(taskinfo *TranferTaskInfo) error {
-	return doFtpDownload(taskinfo)
 }

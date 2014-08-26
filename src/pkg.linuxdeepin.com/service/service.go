@@ -175,7 +175,7 @@ func (p *Service) init() {
 func (p *Service) onProcessReport(transferID string, detaSize int64, finishSize int64, totalSize int64) {
 	dl := QueryDownloader(transferID)
 	if nil == dl {
-		logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
+		//logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
 		return
 	}
 

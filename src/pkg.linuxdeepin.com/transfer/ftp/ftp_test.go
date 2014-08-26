@@ -1,6 +1,7 @@
 package ftp
 
 import (
+	"fmt"
 	"io/ioutil"
 	"testing"
 )
@@ -21,15 +22,17 @@ func Test_testApt(t *testing.T) {
 		t.Error(err)
 	}
 
+	size, err := c.Size("ubuntu/pool/universe/a/audacious/libaudclient2_3.4.3-1_amd64.deb")
+	fmt.Println("Size: ", size, " Error: ", err)
+
 	r, err := c.Retr("ubuntu/pool/universe/a/audacious/libaudclient2_3.4.3-1_amd64.deb")
 	if err != nil {
 		t.Error(err)
 	} else {
-		buf, err := ioutil.ReadAll(r)
+		_, err := ioutil.ReadAll(r)
 		if err != nil {
 			t.Error(err)
 		}
-		t.Errorf("'%s'", buf)
 		r.Close()
 	}
 }

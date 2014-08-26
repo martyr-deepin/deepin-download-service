@@ -38,7 +38,8 @@ func GetDBus() *dlAPI.Service {
 }
 
 func handleUpdete(taskid string, progress int32, speed int32, finish int32, total int32, downloadBytes int64, totalBytes int64) {
-	fmt.Printf("%v  \t%v  \t%v  \t%v  \t%v  \t%v  \t%v\n", taskid, progress, speed, finish, total, downloadBytes, totalBytes)
+	fmt.Printf("%40v %4v %12v %4v %4v %12v %12v\n", taskid, progress, speed, finish, total, downloadBytes, totalBytes)
+
 }
 
 var mutitotal = 2
@@ -184,7 +185,9 @@ func Test_DownloadSingleTask(t *testing.T) {
 	dbus := GetDBus()
 	urls := []string{
 		//		"http://mirrors.aliyun.com/deepin/pool/main/d/deepin-software-center-data/deepin-software-center-data_3.0.0+git20140428094643~5cd82380a4_all.deb",
-		"ftp://ftp.sjtu.edu.cn/ubuntu/pool/universe/q/qtm/qtm_1.3.6-1_amd64.deb",
+		//		"ftp://ftp.sjtu.edu.cn/ubuntu/pool/universe/q/qtm/qtm_1.3.6-1_amd64.deb",
+		//		"ftp://ftp.ubuntu-tw.org/mirror/deepin/pool/non-free/d/deepin-boot-maker/deepin-boot-maker_0.98_amd64.deb",
+		"ftp://ftp.ubuntu-tw.org/mirror/ubuntu/pool/main/m/mono/libmono-i18n-mideast4.0-cil_3.2.8+dfsg-4ubuntu1_all.deb",
 	}
 	md5s := []string{}
 	sizes := []int64{}

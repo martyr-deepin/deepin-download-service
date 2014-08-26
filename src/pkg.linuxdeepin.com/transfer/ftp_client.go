@@ -4,33 +4,209 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"./ftp"
 )
 
+const (
+	UnlockData = int32(0x09)
+)
+
 type FtpClient struct {
-	key   string
-	tasks map[string](*TranferTaskInfo)
-	c     *ftp.ServerConn
+	supportRange bool
+	username     string
+	password     string
+	key          string
+	tasks        map[string](*TranferTaskInfo)
+	c            *ftp.ServerConn
+
+	dataLock sync.Mutex
+	cmdLock  sync.Mutex
 }
 
-func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
+func (p *FtpClient) SupportRange() bool {
+	return p.supportRange
+}
+
+func (p *FtpClient) QuerySize(url string) (int64, error) {
+	logger.Warning("QuerySize")
+	p.lockCmd()
+	defer p.unlockCmd()
+
+	remotePath := strings.Replace(url, "ftp://", "", -1)
+	remotePath = remotePath[len(strings.Split(remotePath, "/")[0])+1 : len(remotePath)]
+
+	return p.c.Size(remotePath)
+}
+
+func (p *FtpClient) NewRequest(url string) (Request, error) {
+	remotePath := strings.Replace(url, "ftp://", "", -1)
+	remotePath = remotePath[len(strings.Split(remotePath, "/")[0])+1 : len(remotePath)]
+
+	request := &FtpRequest{}
+	request.url = url
+	request.remotePath = remotePath
+	request.client = p
+	return request, nil
+}
+
+type FtpRequest struct {
+	url        string
+	remotePath string
+	size       int64
+	client     *FtpClient
+
+	RequestBase
+}
+
+func (r *FtpRequest) QuerySize() (int64, error) {
+	return r.client.QuerySize(r.url)
+}
+
+type HanadleUnlock func(error)
+
+func (r *FtpRequest) handleLock() HanadleUnlock {
+	r.client.lockData()
+	return func(err error) {
+		r.client.unlockData()
+		if nil != err {
+			r.client.Login()
+		}
+	}
+}
+
+func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
+	logger.Infof("[DownloadRange] %v-%v", begin, end)
+
+	var err error
+	r.client.lockData()
+	defer r.client.unlockData()
+	r.client.lockCmd()
+	defer r.client.unlockCmd()
+	defer func() {
+		if nil != err {
+			logger.Warning("Login(err)")
+			r.client.Login()
+		}
+	}()
+
+	//defer r.handleLock()(err)
+	if 0 != begin {
+		logger.Warning(begin, "Rest to")
+		err = r.client.c.Rest(begin)
+		if nil != err {
+			logger.Error(err)
+			return nil, TransferError("ftp RSET failed")
+		}
+	}
+	data, err := r.client.c.Retr(r.remotePath)
+	if err != nil {
+		logger.Error(err, r.remotePath)
+		r.client.c.Quit()
+		delete(_ftpClientPool, r.client.key)
+		return nil, TransferError("Download Cancel")
+	}
+
+	capacity := end - begin
+	buf := make([]byte, 0, capacity)
 	for {
-		if 0 != len(p.tasks) {
-			time.Sleep(3 * time.Second)
-		} else {
-			p.tasks[taskinfo.taskid] = taskinfo
+		//checkTaskStatus will block if status is pause
+		if TASK_ST_CANCEL == r.statusCheck() {
+			return nil, TransferError("Download Cancel")
+		}
+		m, e := data.Read(buf[len(buf):cap(buf)])
+		buf = buf[0 : len(buf)+m]
+
+		if nil != r.progress {
+			r.progress(int64(m), begin+int64(len(buf)), r.size)
+		}
+
+		if e == io.EOF {
+			logger.Warning(e)
+			break
+		}
+		if nil != e {
+			time.Sleep(50 * time.Millisecond)
+			logger.Info("Read e: ", e)
 			break
 		}
 	}
-	defer delete(p.tasks, taskinfo.taskid)
+
+	data.Close()
+	return buf, nil
+}
+
+func GetFtpClient(username string, password string, addr string) (*FtpClient, error) {
+	var err error
+	if !strings.Contains(addr, ":") {
+		addr = addr + ":21"
+	}
+	key := username + password + addr
+	client := _ftpClientPool[key]
+	if nil == client {
+		client = &FtpClient{}
+		client.username = username
+		client.password = password
+		client.c, err = ftp.Connect(addr)
+		if err != nil {
+			logger.Error(err)
+			return nil, TransferError("Create Ftp Connect Failed")
+		}
+		err = client.c.Login(username, password)
+		if err != nil {
+			logger.Error(err)
+			return nil, TransferError("Login Ftp Server Failed")
+		}
+
+		client.tasks = map[string](*TranferTaskInfo){}
+		client.dataLock = sync.Mutex{}
+		client.cmdLock = sync.Mutex{}
+		client.key = key
+		_ftpClientPool[key] = client
+	}
+
+	return client, nil
+}
+
+func (p *FtpClient) Login() {
+	//		p.c.Logout()
+	err := p.c.Login(p.username, p.password)
+	if err != nil {
+		logger.Error(err)
+		//return nil, TransferError("Login Ftp Server Failed")
+	}
+}
+
+func (p *FtpClient) lockCmd() {
+	logger.Warning("Lock Cmd")
+	p.cmdLock.Lock()
+}
+func (p *FtpClient) unlockCmd() {
+	logger.Warning("Unlock Cmd")
+	p.cmdLock.Unlock()
+}
+
+func (p *FtpClient) lockData() {
+	logger.Warning("Lock Data")
+	p.dataLock.Lock()
+}
+
+func (p *FtpClient) unlockData() {
+	logger.Warning("Unlock Cmd")
+	p.dataLock.Unlock()
+}
+
+func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
+	p.lockData()
+	defer p.unlockData()
 
 	r, err := p.c.Retr(ftpPath)
 	if err != nil {
 		logger.Error(err, ftpPath)
 		p.c.Quit()
-		delete(_connectPool, p.key)
+		delete(_ftpClientPool, p.key)
 		return TransferError("Download Cancel")
 	}
 
@@ -38,7 +214,7 @@ func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
 	buf := make([]byte, 0, capacity*2)
 	for {
 		//checkTaskStatus will block if status is pause
-		if TASK_ST_CANCEL == checkTaskStatus(taskinfo) {
+		if TASK_ST_CANCEL == taskinfo.checkTaskStatus() {
 			return TransferError("Download Cancel")
 		}
 		m, e := r.Read(buf[len(buf):cap(buf)])
@@ -79,49 +255,8 @@ func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
 	return nil
 }
 
-var _connectPool map[string](*FtpClient)
+var _ftpClientPool map[string](*FtpClient)
 
 func init() {
-	_connectPool = map[string](*FtpClient){}
-}
-
-func GetFtpClient(username string, password string, addr string) (*FtpClient, error) {
-	if !strings.Contains(addr, ":") {
-		addr = addr + ":21"
-	}
-	var err error
-	key := username + password + addr
-	client := _connectPool[key]
-	if nil == client {
-		client = &FtpClient{}
-		client.c, err = ftp.Connect(addr)
-		if err != nil {
-			logger.Error(err)
-			return nil, TransferError("Create Ftp Connect Failed")
-		}
-		err = client.c.Login(username, password)
-		if err != nil {
-			logger.Error(err)
-			return nil, TransferError("Login Ftp Server Failed")
-		}
-		client.tasks = map[string](*TranferTaskInfo){}
-		client.key = key
-		_connectPool[key] = client
-	}
-
-	return client, nil
-}
-
-func doFtpDownload(taskinfo *TranferTaskInfo) error {
-	ftpUrl := taskinfo.url[6:len(taskinfo.url)]
-	addr := strings.Split(ftpUrl, "/")[0]
-	ftpPath := ftpUrl[len(addr)+1 : len(ftpUrl)]
-
-	client, err := GetFtpClient("anonymous", "anonymous", addr)
-	if err != nil {
-		logger.Error(err)
-		return TransferError("Download Cancel")
-	}
-
-	return client.Download(taskinfo, ftpPath)
+	_ftpClientPool = map[string](*FtpClient){}
 }
