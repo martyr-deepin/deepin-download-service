@@ -14,6 +14,11 @@ const (
 	UnlockData = int32(0x09)
 )
 
+const (
+	CacheSize          = 8096
+	ErrorRetryWaitTime = 100
+)
+
 type FtpClient struct {
 	supportRange bool
 	username     string
@@ -65,16 +70,71 @@ func (r *FtpRequest) QuerySize() (int64, error) {
 	return r.client.QuerySize(r.url)
 }
 
-type HanadleUnlock func(error)
+func (r *FtpRequest) Download(localFilePath string) error {
+	logger.Infof("[Download] %v", localFilePath)
 
-func (r *FtpRequest) handleLock() HanadleUnlock {
+	var err error
 	r.client.lockData()
-	return func(err error) {
-		r.client.unlockData()
+	defer r.client.unlockData()
+	r.client.lockCmd()
+	defer r.client.unlockCmd()
+
+	defer func() {
 		if nil != err {
+			logger.Warning("Login(err)")
 			r.client.Login()
 		}
+	}()
+
+	dlfile, err := os.OpenFile(localFilePath, os.O_CREATE|os.O_RDWR, 0755)
+	defer dlfile.Close()
+	if err != nil {
+		logger.Error(err)
+		return err
 	}
+
+	data, err := r.client.c.Retr(r.remotePath)
+	if err != nil {
+		logger.Error(err, r.remotePath)
+		return err
+	}
+	defer data.Close()
+
+	capacity := CacheSize
+	writtenBytes := int64(0)
+	buf := make([]byte, 0, capacity)
+	for {
+		if TASK_ST_CANCEL == r.statusCheck() {
+			return TransferError("Download Cancel")
+		}
+		m, e := data.Read(buf[len(buf):cap(buf)])
+		buf = buf[0 : len(buf)+m]
+
+		if nil != r.progress {
+			r.progress(int64(m), writtenBytes+int64(len(buf)), r.size)
+		}
+
+		if len(buf) == cap(buf) {
+			dlfile.WriteAt(buf, writtenBytes)
+			dlfile.Sync()
+			writtenBytes += int64(len(buf))
+			buf = make([]byte, 0, capacity)
+			continue
+		}
+
+		if e == io.EOF {
+			dlfile.WriteAt(buf, writtenBytes)
+			dlfile.Sync()
+			logger.Warning("Read Buffer End with", e)
+			break
+		}
+		if nil != e {
+			logger.Error("Ftp Download Error: ", e)
+			time.Sleep(ErrorRetryWaitTime * time.Millisecond)
+			break
+		}
+	}
+	return nil
 }
 
 func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
@@ -85,6 +145,7 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	defer r.client.unlockData()
 	r.client.lockCmd()
 	defer r.client.unlockCmd()
+
 	defer func() {
 		if nil != err {
 			logger.Warning("Login(err)")
@@ -92,27 +153,24 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 		}
 	}()
 
-	//defer r.handleLock()(err)
 	if 0 != begin {
 		logger.Warning(begin, "Rest to")
 		err = r.client.c.Rest(begin)
 		if nil != err {
 			logger.Error(err)
-			return nil, TransferError("ftp RSET failed")
+			return nil, err
 		}
 	}
 	data, err := r.client.c.Retr(r.remotePath)
 	if err != nil {
 		logger.Error(err, r.remotePath)
-		r.client.c.Quit()
-		delete(_ftpClientPool, r.client.key)
-		return nil, TransferError("Download Cancel")
+		return nil, err
 	}
+	data.Close()
 
 	capacity := end - begin
 	buf := make([]byte, 0, capacity)
 	for {
-		//checkTaskStatus will block if status is pause
 		if TASK_ST_CANCEL == r.statusCheck() {
 			return nil, TransferError("Download Cancel")
 		}
@@ -128,13 +186,12 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 			break
 		}
 		if nil != e {
-			time.Sleep(50 * time.Millisecond)
 			logger.Info("Read e: ", e)
-			break
+			time.Sleep(ErrorRetryWaitTime * time.Millisecond)
+			return nil, e
 		}
 	}
 
-	data.Close()
 	return buf, nil
 }
 
@@ -194,7 +251,7 @@ func (p *FtpClient) lockData() {
 }
 
 func (p *FtpClient) unlockData() {
-	logger.Warning("Unlock Cmd")
+	logger.Warning("Unlock Data")
 	p.dataLock.Unlock()
 }
 

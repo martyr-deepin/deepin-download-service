@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -19,8 +20,63 @@ type HttpRequest struct {
 	RequestBase
 }
 
-func (p *HttpRequest) QuerySize() (int64, error) {
-	return p.client.QuerySize(p.url)
+func (hr *HttpRequest) QuerySize() (int64, error) {
+	return hr.client.QuerySize(hr.url)
+}
+
+func (hr *HttpRequest) Download(localFilePath string) error {
+	logger.Infof("[Download] %v", localFilePath)
+	var err error
+	dlfile, err := os.OpenFile(localFilePath, os.O_CREATE|os.O_RDWR, 0755)
+	defer dlfile.Close()
+	if err != nil {
+		logger.Error(err)
+		return err
+	}
+
+	reqest, _ := http.NewRequest("GET", hr.url, nil)
+	response, err := hr.client.client.Do(reqest)
+
+	if (nil == response) || (nil != err) {
+		logger.Errorf("[Download] Get Http Respone %v Failed: %v", response, err)
+		return err
+	}
+
+	if response.StatusCode == 200 {
+		capacity := CacheSize
+		writtenBytes := int64(0)
+		buf := make([]byte, 0, capacity)
+		for {
+			if TASK_ST_CANCEL == hr.statusCheck() {
+				return TransferError("Download Cancel")
+			}
+			m, e := response.Body.Read(buf[len(buf):cap(buf)])
+			buf = buf[0 : len(buf)+m]
+
+			if nil != hr.progress {
+				hr.progress(int64(m), writtenBytes+int64(len(buf)), 0)
+			}
+
+			if len(buf) == cap(buf) {
+				dlfile.WriteAt(buf, writtenBytes)
+				dlfile.Sync()
+				writtenBytes += int64(len(buf))
+				buf = make([]byte, 0, capacity)
+				continue
+			}
+
+			if e == io.EOF {
+				logger.Warning("Read Buffer End with", e)
+				break
+			}
+			if nil != e {
+				logger.Error("Ftp Download Error: ", e)
+				time.Sleep(ErrorRetryWaitTime * time.Millisecond)
+				return e
+			}
+		}
+	}
+	return nil
 }
 
 func (hr *HttpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {

@@ -27,8 +27,7 @@ import (
 	"container/list"
 	"encoding/binary"
 	"errors"
-	"io"
-	"net/http"
+
 	"os"
 	"os/exec"
 	"runtime"
@@ -337,27 +336,37 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 	var err error
 	defer t.finishTranferTask(taskinfo)
 
-	//	if !checkftpUrl(taskinfo.url) {
-	//	err = t.ftpDownload(taskinfo)
-	//	if err != nil {
-	//		logger.Error(err)
-	//		taskinfo.status = TASK_FAILED
-	//		return
-	//		}
-	//	} else {
 	taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
-	//	}
-
 	if err != nil {
 		logger.Error(err)
 		taskinfo.status = TASK_FAILED
 		return
 	}
 
-	err = t.checkLocalFileDupAndDownload(taskinfo, 0)
+	client, err := GetClient(taskinfo.url)
 	if err != nil {
+		logger.Error(err)
 		taskinfo.status = TASK_FAILED
 		return
+	}
+
+	if client.SupportRange() {
+		err = t.checkLocalFileDupAndDownload(taskinfo, 0)
+		if err != nil {
+			logger.Error(err)
+			taskinfo.status = TASK_FAILED
+			return
+		}
+	} else {
+		request, _ := client.NewRequest(taskinfo.url)
+		request.ConnectProgress(taskinfo.progress)
+		request.ConnectStatusCheck(taskinfo.checkTaskStatus)
+		err = request.Download(taskinfo.localFile)
+		if err != nil {
+			logger.Error(err)
+			taskinfo.status = TASK_FAILED
+			return
+		}
 	}
 
 	//verfiy MD5
@@ -728,75 +737,6 @@ func (taskinfo *TranferTaskInfo) progress(deta int64, downloaded int64, total in
 	taskinfo.detaSize += int64(deta)
 	taskinfo.downloadSize = downloaded
 	taskinfo.totalSize = taskinfo.fileSize
-}
-
-/*
-@description
-    download a file with rangeBegin to rangeEnd
-@input
-    url: url for download file
-    rangeBegin: pos of start bytes
-    rangeEnd: pos of end bytes
-@return
-    error: errors
-*/
-func (t *Transfer) downloadRange(taskinfo *TranferTaskInfo, rangeBegin int64, rangeEnd int64) ([]byte, error) {
-	client := &http.Client{}
-	url := taskinfo.url
-	reqest, _ := http.NewRequest("GET", url, nil)
-	bytestr := "bytes=" + strconv.Itoa(int(rangeBegin)) + "-" + strconv.Itoa(int(rangeEnd))
-	reqest.Header.Set("Range", bytestr)
-	response, err := client.Do(reqest)
-	logger.Infof("[downloadRange]%v", bytestr)
-	retryTimes := 5
-	for i := 0; i < retryTimes; i += 1 {
-		if nil != err {
-			//&& ("EOF" == err.Error()) {
-			logger.Warningf("[downloadRange] Retry")
-			time.Sleep(500 * time.Millisecond)
-			response, err = client.Do(reqest)
-		} else {
-			break
-		}
-	}
-
-	if (nil == response) || (nil != err) {
-		logger.Errorf("[downloadRange] Get Http Respone %v Failed: %v", response, err)
-		return nil, err
-	}
-
-	if (response.StatusCode == 200) || (response.StatusCode == 206) {
-		//		logger.Info("Response Headers: ", response.Header)
-		//		logger.Info("Read Content-Range:", response.Header.Get("Content-Range"))
-		capacity := rangeEnd - rangeBegin
-		buf := make([]byte, 0, capacity*2)
-		for {
-			//checkTaskStatus will block if status is pause
-			if TASK_ST_CANCEL == taskinfo.checkTaskStatus() {
-				return buf, TransferError("Download Cancel")
-			}
-			m, e := response.Body.Read(buf[len(buf):cap(buf)])
-			buf = buf[0 : len(buf)+m]
-			taskinfo.detaSize += int64(m)
-			taskinfo.downloadSize = rangeBegin + int64(len(buf))
-			taskinfo.totalSize = taskinfo.fileSize
-			//t.ProcessReport(taskinfo.taskid, int64(m), rangeBegin+int64(len(buf)), taskinfo.fileSize)
-			if e == io.EOF {
-				//logger.Info("Read io.EOF: ", len(buf))
-				break
-			}
-			if e != nil {
-				time.Sleep(4 * time.Millisecond)
-				logger.Info("Read e: ", e)
-				return buf, e
-			}
-		}
-
-		//contents, err := ioutil.ReadAll(response.Body)
-		//logger.Info("Read Content-Range end")
-		return buf, nil
-	}
-	return []byte(""), TransferError("Download url error, Http statuscode: " + strconv.Itoa(response.StatusCode))
 }
 
 func (t *Transfer) startProgressReportTimer() {

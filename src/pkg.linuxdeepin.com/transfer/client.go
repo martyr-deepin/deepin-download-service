@@ -11,6 +11,7 @@ type ProgressCallback func(int64, int64, int64)
 type Request interface {
 	QuerySize() (int64, error)
 	DownloadRange(int64, int64) ([]byte, error)
+	Download(string) error
 	ConnectStatusCheck(StatusCheckCallback)
 	ConnectProgress(ProgressCallback)
 }
