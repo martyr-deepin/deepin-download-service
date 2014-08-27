@@ -195,6 +195,15 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	return buf, nil
 }
 
+func QuitAllFtpClient() {
+	for _, c := range _ftpClientPool {
+		c.lockCmd()
+		c.c.Quit()
+		c.unlockCmd()
+	}
+	_ftpClientPool = map[string](*FtpClient){}
+}
+
 func GetFtpClient(username string, password string, addr string) (*FtpClient, error) {
 	var err error
 	if !strings.Contains(addr, ":") {

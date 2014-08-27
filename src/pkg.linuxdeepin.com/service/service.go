@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 package main
 
 import (
+	"bytes"
+	"os/exec"
+	"strings"
 	"time"
 
 	"pkg.linuxdeepin.com/lib/dbus"
@@ -39,6 +42,13 @@ const (
 
 const (
 	TS_FINISH = int32(0x10)
+)
+
+const (
+	TASK_START    = int32(0x10)
+	TASK_SUCCESS  = int32(0x11)
+	TASK_FAILED   = int32(0x12)
+	TASK_NOT_EXIT = int32(0x13)
 )
 
 type Service struct {
@@ -146,6 +156,68 @@ func (p *Service) startUpdateTaskInfoTimer() {
 
 }
 
+func (p *Service) startCheckTaskInfoTimer() {
+	//init process update Timer
+	logger.Info("[startCheckTaskInfoTimer] Start Timer")
+	timer := time.NewTimer(20 * time.Second)
+	for {
+		select {
+		case <-timer.C:
+			p.checkTaskInfo()
+			timer.Reset(20 * time.Second)
+		}
+	}
+}
+
+func VerifyMD5(file string) string {
+	cmdline := "md5sum -b " + file
+	cmd := exec.Command("/bin/sh", "-c", cmdline)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if nil != err {
+		logger.Warning("[VerifyMD5] Error: ", err)
+	}
+	logger.Warning("[VerifyMD5] ", out.String())
+	md5 := strings.Split(out.String(), " ")[0]
+	return md5
+}
+
+func (p *Service) checkTaskInfo() {
+	logger.Warning("checkTaskInfo")
+	for _, task := range p.workTasks {
+		for _, dl := range task.downloaders {
+			if 0 != len(dl.transferID) {
+				status, err := TransferDbus().QueryTaskStatus(dl.transferID)
+				if nil != err {
+					logger.Warning("checkTaskInfo error ", err)
+					status = TASK_NOT_EXIT
+				}
+				switch status {
+				case TASK_START:
+					logger.Warning("task start")
+					continue
+				case TASK_SUCCESS:
+					logger.Warning("task success")
+					p.onTransferFinish(dl.transferID, TASK_SUCCESS)
+				case TASK_FAILED:
+					logger.Warning("task failed")
+					p.onTransferFinish(dl.transferID, TASK_FAILED)
+				case TASK_NOT_EXIT:
+					logger.Warning("task not exit", dl.transferID)
+					if dl.md5 == VerifyMD5(dl.storeDir+"/"+dl.fileName) {
+						logger.Warning("task not exit", dl.transferID, dl.md5)
+						p.onTransferFinish(dl.transferID, TASK_SUCCESS)
+					} else {
+						p.onTransferFinish(dl.transferID, TASK_FAILED)
+						logger.Warning("task error")
+					}
+				}
+			}
+		}
+	}
+}
+
 func (p *Service) updateTaskInfo(timer *time.Timer) {
 	//	logger.Info("[updateTaskInfo] Send progress signal per second")
 	for taskid, task := range p.tasks {
@@ -170,6 +242,7 @@ func (p *Service) init() {
 	go p.taskDownlowner()
 	go p.startUpdateTaskInfoTimer()
 	go p.downloaderDispatch()
+	go p.startCheckTaskInfoTimer()
 }
 
 func (p *Service) onProcessReport(transferID string, detaSize int64, finishSize int64, totalSize int64) {

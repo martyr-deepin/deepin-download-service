@@ -134,7 +134,7 @@ func (p *Task) FinishDownloaderHook(dl *Downloader, retCode int32) {
 	p.status.finished++
 	logger.Warning(p.ID, p.status.finished, p.status.total, retCode)
 
-	if 0 != retCode {
+	if TASK_SUCCESS != retCode {
 		logger.Warningf("Cancel Task %v", p.ID)
 		p.cancel(retCode, "Download Package Error")
 		return

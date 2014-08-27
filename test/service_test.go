@@ -253,7 +253,7 @@ func Test_VerifyMD5(t *testing.T) {
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
 	}
-	md5s := []string{"80e7028d649cb2c81fdc4eab6a94b0c7"}
+	md5s := []string{"c80e7028d649cb2c81fdc4eab6a94b0c7"}
 	sizes := []int64{}
 	defer dbus.ConnectUpdate(handleUpdete)()
 	defer dbus.ConnectFinish(handleMD5Finish)()
@@ -268,7 +268,7 @@ func Test_VerifyMD5(t *testing.T) {
 
 	waitTaskFinish(t)
 }
-func Test_VerifyMD5Error(t *testing.T) {
+func Test_VierifyMD5Error(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{

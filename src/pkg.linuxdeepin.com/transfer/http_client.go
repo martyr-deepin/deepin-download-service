@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+const (
+	HttpRetryTimes = 10
+)
+
 type HttpClient struct {
 	client http.Client
 }
@@ -85,12 +89,12 @@ func (hr *HttpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	logger.Infof("[DownloadRange] %v", bytestr)
 	reqest.Header.Set("Range", bytestr)
 	response, err := hr.client.client.Do(reqest)
-	retryTimes := 3
+	retryTimes := HttpRetryTimes
 	for 0 < retryTimes {
 		retryTimes--
 		if nil != err {
 			logger.Warningf("[DownloadRange] Retry")
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(100 * time.Duration(HttpRetryTimes-retryTimes) * time.Millisecond)
 			response, err = hr.client.client.Do(reqest)
 		} else {
 			break
@@ -159,8 +163,20 @@ func (p *HttpClient) SupportRange() bool {
 func (p *HttpClient) QuerySize(url string) (int64, error) {
 	reqest, _ := http.NewRequest("GET", url, nil)
 	fileSize := int64(0)
-	response, _ := p.client.Do(reqest)
-	if nil == response {
+	response, err := p.client.Do(reqest)
+	retryTimes := HttpRetryTimes
+	for 0 < retryTimes {
+		retryTimes--
+		if nil != err {
+			logger.Warningf("[QuerySize] Retry")
+			time.Sleep(100 * time.Duration(HttpRetryTimes-retryTimes) * time.Millisecond)
+			response, err = p.client.Do(reqest)
+		} else {
+			break
+		}
+	}
+
+	if (nil == response) || (nil != err) {
 		return fileSize, TransferError("Http Request Error, Url: " + url)
 	}
 

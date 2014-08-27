@@ -51,6 +51,8 @@ type Transfer struct {
 	tasks     map[string]*TranferTaskInfo
 	workTasks *list.List
 	waitTasks *list.List
+
+	daemonTimer *time.Timer
 }
 
 const (
@@ -78,6 +80,7 @@ func GetTransfer() *Transfer {
 		_transfer.workTasks = list.New()
 		_transfer.MaxTransferNumber = 32
 		go _transfer.startProgressReportTimer()
+		go _transfer.startDaemon()
 	}
 	return _transfer
 }
@@ -87,8 +90,10 @@ func TransferError(msg string) (terr error) {
 }
 
 const (
-	TASK_SUCCESS = int32(0)
-	TASK_FAILED  = int32(1)
+	TASK_START    = int32(0x10)
+	TASK_SUCCESS  = int32(0x11)
+	TASK_FAILED   = int32(0x12)
+	TASK_NOT_EXIT = int32(0x13)
 )
 
 const (
@@ -125,8 +130,10 @@ func (t *Transfer) Pause(taskid string) int32 {
 
 func (t *Transfer) Cancel(taskid string) int32 {
 	taskinfo := t.tasks[taskid]
+	delete(t.tasks, taskid)
 	if taskinfo != nil {
-		taskinfo.taskStatusChan <- TASK_ST_CANCEL
+		t.FinishReport(taskid, TASK_FAILED)
+		go func() { taskinfo.taskStatusChan <- TASK_ST_CANCEL }()
 		return ACTION_SUCCESS
 	}
 	return ACTION_FAILED
@@ -150,7 +157,6 @@ func VerifyMD5(file string) string {
 	if nil != err {
 		logger.Warning("[VerifyMD5] Error: ", err)
 	}
-	logger.Warning("[VerifyMD5] ", out.String())
 	md5 := strings.Split(out.String(), " ")[0]
 	return md5
 }
@@ -173,6 +179,7 @@ func (t *Transfer) Download(url string, localfile string, md5 string, ondup int3
 	taskinfo := &TranferTaskInfo{}
 	taskinfo.taskid = t.newTaskid()
 	taskinfo.taskStatusChan = make(chan int32)
+	taskinfo.status = TASK_START
 	taskinfo.md5 = md5
 	taskinfo.url = url
 	taskinfo.originLocalFilename = localfile
@@ -192,6 +199,15 @@ func (t *Transfer) QuerySize(url string) int64 {
 		return 0
 	}
 	return size
+}
+
+func (t *Transfer) QueryTaskStatus(taskid string) int32 {
+	task := t.tasks[taskid]
+	if nil == task {
+		return TASK_NOT_EXIT
+	}
+
+	return task.status
 }
 
 const (
@@ -350,39 +366,47 @@ func (t *Transfer) download(taskinfo *TranferTaskInfo) {
 		return
 	}
 
-	if client.SupportRange() {
-		err = t.checkLocalFileDupAndDownload(taskinfo, 0)
-		if err != nil {
-			logger.Error(err)
-			taskinfo.status = TASK_FAILED
-			return
+	retryTime := 3
+	for retryTime > 0 {
+		retryTime--
+		if client.SupportRange() {
+			err = t.checkLocalFileDupAndDownload(taskinfo, 0)
+			if err != nil {
+				logger.Error(err)
+				taskinfo.status = TASK_FAILED
+				return
+			}
+		} else {
+			request, _ := client.NewRequest(taskinfo.url)
+			request.ConnectProgress(taskinfo.progress)
+			request.ConnectStatusCheck(taskinfo.checkTaskStatus)
+			err = request.Download(taskinfo.localFile)
+			if err != nil {
+				logger.Error(err)
+				taskinfo.status = TASK_FAILED
+				return
+			}
 		}
-	} else {
-		request, _ := client.NewRequest(taskinfo.url)
-		request.ConnectProgress(taskinfo.progress)
-		request.ConnectStatusCheck(taskinfo.checkTaskStatus)
-		err = request.Download(taskinfo.localFile)
-		if err != nil {
-			logger.Error(err)
-			taskinfo.status = TASK_FAILED
-			return
-		}
-	}
 
-	//verfiy MD5
-	if 0 != len(taskinfo.md5) {
-		if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
-			taskinfo.status = TASK_FAILED
-			return
+		//verfiy MD5
+		if 0 != len(taskinfo.md5) {
+			fileMD5 := VerifyMD5(taskinfo.localFile)
+			logger.Warningf("[VerifyMD5] dwonload: %v, check: %v, taskid %v", fileMD5, taskinfo.md5, taskinfo.taskid)
+			if taskinfo.md5 != fileMD5 {
+				logger.Warningf("[VerifyMD5] dwonload: %v, check: %v, taskid %v, task.file %v, task.url %v", fileMD5, taskinfo.md5, taskinfo.taskid, taskinfo.localFile, taskinfo.url)
+				os.Remove(taskinfo.localFile)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			} else {
+				taskinfo.status = TASK_SUCCESS
+				return
+			}
 		}
-	}
 
-	//verfiy MD5
-	if 0 != len(taskinfo.md5) {
-		if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
-			taskinfo.status = TASK_FAILED
-			return
-		}
+	}
+	if retryTime <= 0 {
+		taskinfo.status = TASK_FAILED
+		return
 	}
 
 	taskinfo.status = TASK_SUCCESS
@@ -643,11 +667,12 @@ func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
 
 			var data []byte
 			data, err = request.DownloadRange(beginByte, endByte)
-			retryTime := 3
+			retryTime := HttpRetryTimes
 			err = nil
 			for retryTime > 0 {
 				retryTime--
 				if nil != err {
+					time.Sleep(200 * time.Duration(HttpRetryTimes-retryTime) * time.Millisecond)
 					data, err = request.DownloadRange(beginByte, endByte)
 				} else {
 					break
@@ -757,6 +782,21 @@ func (t *Transfer) handleProgressReport() {
 			//logger.Warning("Report Progress of", taskinfo.taskid, " size ", taskinfo.detaSize)
 			t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
 			taskinfo.detaSize = 0
+		}
+	}
+}
+
+func (t *Transfer) startDaemon() {
+	t.daemonTimer = time.NewTimer(60 * time.Second)
+	for {
+		select {
+		case <-t.daemonTimer.C:
+			if 0 == len(t.tasks) {
+				QuitAllFtpClient()
+				os.Exit(0)
+			} else {
+				t.daemonTimer.Reset(60 * time.Second)
+			}
 		}
 	}
 }
