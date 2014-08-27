@@ -43,8 +43,8 @@ func GetClient(url string) (Client, error) {
 	if strings.Contains(url, "ftp://") {
 		// TODO: get the username and password by url
 		addr := strings.Split(url[len("ftp://"):len(url)], "/")[0]
-		client, _ := GetFtpClient("anonymous", "", addr)
-		return client, nil
+		client, err := GetFtpClient("anonymous", "", addr)
+		return client, err
 	}
 	return nil, errors.New("Unknow Portoal")
 }
