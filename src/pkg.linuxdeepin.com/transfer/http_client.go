@@ -51,7 +51,7 @@ func (hr *HttpRequest) Download(localFilePath string) error {
 		writtenBytes := int64(0)
 		buf := make([]byte, 0, capacity)
 		for {
-			if TASK_ST_CANCEL == hr.statusCheck() {
+			if TaskCancel == hr.statusCheck() {
 				return TransferError("Download Cancel")
 			}
 			m, e := response.Body.Read(buf[len(buf):cap(buf)])
@@ -110,7 +110,7 @@ func (hr *HttpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 		capacity := end - begin + 512
 		buf := make([]byte, 0, capacity)
 		for {
-			if TASK_ST_CANCEL == hr.statusCheck() {
+			if TaskCancel == hr.statusCheck() {
 				return buf, TransferError("Download Cancel")
 			}
 			m, e := response.Body.Read(buf[len(buf):cap(buf)])

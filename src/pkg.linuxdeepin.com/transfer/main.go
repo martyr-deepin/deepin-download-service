@@ -43,7 +43,7 @@ func stringInSlice(a string, list []string) bool {
 func main() {
 	defer logger.EndTracing()
 	logger.Info("[main] Start Transfer Service")
-	if !lib.UniqueOnSystem(TRANSFER_DEST) {
+	if !lib.UniqueOnSystem(ServiceDest) {
 		logger.Warning("[main] There already has an Transfer daemon running.")
 		return
 	}
@@ -54,7 +54,7 @@ func main() {
 		logger.SetLogLevel(dlogger.LevelDebug)
 	}
 
-	transfer := GetTransfer()
+	transfer := GetService()
 
 	err := dbus.InstallOnSystem(transfer)
 	if err != nil {

@@ -15,6 +15,16 @@ const (
 	DownloaderCancel = int32(0xA3)
 )
 
+const (
+	OnDupRename    = int32(0x40)
+	OnDupOverWrite = int32(0x41)
+)
+
+const (
+	ActionSuccess = int32(0)
+	ActionFailed  = int32(1)
+)
+
 type Downloader struct {
 	ID           string
 	status       int32
@@ -120,8 +130,8 @@ func (p *Downloader) Start() error {
 		return nil
 	}
 
-	result, transferID, err := TransferDbus().Download(p.url, p.storeDir+"/"+p.fileName, p.md5, 0)
-	if (nil != err) || (result != 0) {
+	result, transferID, err := TransferDbus().Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
+	if (nil != err) || (result != ActionSuccess) {
 		ret := fmt.Sprintf("Start Transfer Error: Result: %v Error: %v", result, err)
 		return DownloadError(ret)
 	}

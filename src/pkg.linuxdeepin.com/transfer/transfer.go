@@ -22,210 +22,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"container/list"
-	"encoding/binary"
-	"errors"
+	"fmt"
 
 	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
-	"pkg.linuxdeepin.com/lib/dbus"
 	"pkg.linuxdeepin.com/lib/utils"
 )
 
+const (
+	TaskStart   = int32(0x10)
+	TaskSuccess = int32(0x11)
+	TaskFailed  = int32(0x12)
+	TaskNoExist = int32(0x13)
+
+	TaskPause  = int32(0x14)
+	TaskCancel = int32(0x15)
+)
+
+const (
+	OnDupRename    = int32(0x40)
+	OnDupOverWrite = int32(0x41)
+)
+
 type Transfer struct {
-	//Signal
-	ProcessReport func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
-	FinishReport  func(taskid string, statusCode int32)
-
-	MaxTransferNumber int32
-
-	//to get an unique taskid
-	taskidgen int32
-	tasks     map[string]*TranferTaskInfo
-	workTasks *list.List
-	waitTasks *list.List
-
-	daemonTimer *time.Timer
-}
-
-const (
-	TRANSFER_DEST = "com.deepin.api.Transfer"
-	TRANSFER_PATH = "/com/deepin/api/Transfer"
-	TRANSFER_IFC  = "com.deepin.api.Transfer"
-)
-
-func (t *Transfer) GetDBusInfo() dbus.DBusInfo {
-	return dbus.DBusInfo{
-		TRANSFER_DEST,
-		TRANSFER_PATH,
-		TRANSFER_IFC,
-	}
-}
-
-var _transfer *Transfer
-
-func GetTransfer() *Transfer {
-	if nil == _transfer {
-		_transfer = &Transfer{}
-		_transfer.taskidgen = 0
-		_transfer.tasks = map[string]*TranferTaskInfo{}
-		_transfer.waitTasks = list.New()
-		_transfer.workTasks = list.New()
-		_transfer.MaxTransferNumber = 32
-		go _transfer.startProgressReportTimer()
-		go _transfer.startDaemon()
-	}
-	return _transfer
-}
-
-func TransferError(msg string) (terr error) {
-	return errors.New("TransferError: " + msg)
-}
-
-const (
-	TASK_START    = int32(0x10)
-	TASK_SUCCESS  = int32(0x11)
-	TASK_FAILED   = int32(0x12)
-	TASK_NOT_EXIT = int32(0x13)
-)
-
-const (
-	ACTION_SUCCESS = int32(0)
-	ACTION_FAILED  = int32(1)
-)
-
-const (
-	TASK_ST_RUNING = int32(0)
-	TASK_ST_PAUSE  = int32(1)
-	TASK_ST_CANCEL = int32(2)
-)
-
-func (t *Transfer) Resume(taskid string) int32 {
-	taskinfo := t.tasks[taskid]
-	logger.Info("Resume", taskid)
-	if taskinfo != nil {
-		taskinfo.taskStatusChan <- TASK_ST_RUNING
-		logger.Info("Resume", taskid)
-		return ACTION_SUCCESS
-	}
-	return ACTION_FAILED
-}
-
-func (t *Transfer) Pause(taskid string) int32 {
-	taskinfo := t.tasks[taskid]
-	logger.Info("Pause", taskid)
-	if taskinfo != nil {
-		taskinfo.taskStatusChan <- TASK_ST_PAUSE
-		return ACTION_SUCCESS
-	}
-	return ACTION_FAILED
-}
-
-func (t *Transfer) Cancel(taskid string) int32 {
-	taskinfo := t.tasks[taskid]
-	delete(t.tasks, taskid)
-	if taskinfo != nil {
-		t.FinishReport(taskid, TASK_FAILED)
-		go func() { taskinfo.taskStatusChan <- TASK_ST_CANCEL }()
-		return ACTION_SUCCESS
-	}
-	return ACTION_FAILED
-}
-
-func (t *Transfer) isTransferTaskExit(url string, localfile string) bool {
-	for _, task := range t.tasks {
-		if (task.url == url) && (task.localFile == localfile) {
-			return true
-		}
-	}
-	return false
-}
-
-func VerifyMD5(file string) string {
-	cmdline := "md5sum -b " + file
-	cmd := exec.Command("/bin/sh", "-c", cmdline)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if nil != err {
-		logger.Warning("[VerifyMD5] Error: ", err)
-	}
-	md5 := strings.Split(out.String(), " ")[0]
-	return md5
-}
-
-/*
-url: url to download
-localfile: path for download file in local disk
-ondup: 0 overwrite when dup
-        1 make a new name
-
-return Download Status
-*/
-func (t *Transfer) Download(url string, localfile string, md5 string, ondup int32) (retCode int32, taskid string) {
-	if t.isTransferTaskExit(url, localfile) {
-		logger.Warning("Transfer Task Exit")
-		return ACTION_FAILED, ""
-	}
-
-	logger.Warning("Transfer Task ADD")
-	taskinfo := &TranferTaskInfo{}
-	taskinfo.taskid = t.newTaskid()
-	taskinfo.taskStatusChan = make(chan int32)
-	taskinfo.status = TASK_START
-	taskinfo.md5 = md5
-	taskinfo.url = url
-	taskinfo.originLocalFilename = localfile
-	taskinfo.localFile = localfile
-	taskinfo.status = TASK_ST_RUNING
-	taskinfo.overdup = ondup
-	t.tasks[taskinfo.taskid] = taskinfo
-
-	go t.startTranferTask(taskinfo)
-
-	return ACTION_SUCCESS, taskinfo.taskid
-}
-
-func (t *Transfer) QuerySize(url string) int64 {
-	size, err := t.remoteFileSize(url)
-	if nil != err {
-		return 0
-	}
-	return size
-}
-
-func (t *Transfer) QueryTaskStatus(taskid string) int32 {
-	task := t.tasks[taskid]
-	if nil == task {
-		return TASK_NOT_EXIT
-	}
-
-	return task.status
-}
-
-const (
-	SIZE_1K = 1024
-	SIZE_1M = SIZE_1K * SIZE_1K
-)
-
-type TranferTaskInfo struct {
-	taskid              string
+	ID                  string
 	status              int32
 	url                 string
 	md5                 string
-	overdup             int32
+	ondup               int32
 	fileSize            int64
 	fileName            string
-	originLocalFilename string
+	originLocalFileName string
 	localFile           string
-	dlStatusFile        string
+	statusFile          string
 
 	taskStatusChan chan int32
 
@@ -236,411 +69,153 @@ type TranferTaskInfo struct {
 	totalSize    int64
 }
 
-type DownloadStatusInfo struct {
-	fileSize  int64
-	blockSize int64
-	blockNum  int64
-	blockStat []byte
-}
-
-/*
-@description
-    generate a new tranfer taskid
-@input
-
-@return
-    a unique taskid in all transfer task
-*/
-func (t *Transfer) newTaskid() string {
+func newTransferID() string {
 	return utils.GenUuid() + "_transfer"
 }
 
-/*
-@description
-    check if the file exist
-@input
-    filename: the full path of file
-@return
-    true if file exist, otherwise false
-*/
-func isFileExist(filename string) bool {
-	isExist := bool(false)
-	file, err := os.Open(filename)
-	if err != nil {
-		isExist = false
-	} else {
-		isExist = true
-	}
-	file.Close()
-	return isExist
+//NewTask
+func NewTransfer(url string, localFile string, md5 string, ondup int32) (*Transfer, error) {
+	t := &Transfer{}
+	t.ID = newTransferID()
+	t.taskStatusChan = make(chan int32)
+	t.status = TaskStart
+	t.md5 = md5
+	t.url = url
+	t.originLocalFileName = localFile
+	t.localFile = localFile
+	t.status = TaskStart
+	t.ondup = ondup
+	logger.Warningf("[NewTransfer] ID: %v localFile: %v", t.ID, localFile)
+	return t, nil
 }
 
-/*
-@description
-    check if the file exist
-@input
-    url: the url of remote file
-@return
-    0 if remote server do not support Content-Length Header or other errors
-    otherwise return the remote file size
-*/
-func (t *Transfer) remoteFileSize(url string) (int64, error) {
-	client, err := GetClient(url)
-
-	if err != nil {
-		logger.Error("[remotefilesize]Get Remove Files Failed: ", err)
-		return 0, err
-	}
-
-	size, err := client.QuerySize(url)
-	if err != nil {
-		logger.Error("[remotefilesize]Get Remove Files Failed: ", err)
-		return 0, err
-	}
-
-	return size, nil
-}
-
-func (t *Transfer) startTranferTask(taskinfo *TranferTaskInfo) {
-	if int32(t.workTasks.Len()) < t.MaxTransferNumber {
-		logger.Warning("Add Task to worklist", taskinfo.taskid)
-		taskinfo.element = t.workTasks.PushBack(taskinfo)
-		go t.download(taskinfo)
-		return
-	}
-	taskinfo.element = t.waitTasks.PushBack(taskinfo)
-}
-
-func (t *Transfer) finishTranferTask(taskinfo *TranferTaskInfo) {
-	logger.Warningf("[finishTranferTask]: %v %v %v", taskinfo.taskid, taskinfo.url, taskinfo.status)
-	t.FinishReport(taskinfo.taskid, taskinfo.status)
-
-	if nil != taskinfo.element {
-		t.workTasks.Remove(taskinfo.element)
-	}
-	delete(t.tasks, taskinfo.taskid)
-
-	// TODO: exit transfer if all tasks finish
-
-	// Start a new task
-	element := t.waitTasks.Front()
-
-	if nil == element {
-		return
-	}
-	value := t.waitTasks.Remove(element)
-	if taskinfo, ok := value.(*TranferTaskInfo); ok {
-		t.startTranferTask(taskinfo)
-	}
-}
-
-func checkftpUrl(url string) bool {
-	return strings.Contains(url, "ftp://")
-}
-
-/*
-@description
-    check if the file exist
-@input
-    url: the url of remote file
-@return
-    0 if remote server do not support Content-Length Header
-    otherwise return the remote file size
-*/
-func (t *Transfer) download(taskinfo *TranferTaskInfo) {
-	logger.Info("Start Download url: ", taskinfo.url)
+func (t *Transfer) Download() error {
+	logger.Info("[Download] Start Download url: ", t.url)
 	var err error
-	defer t.finishTranferTask(taskinfo)
-
-	taskinfo.fileSize, err = t.remoteFileSize(taskinfo.url)
-	if err != nil {
-		logger.Error(err)
-		taskinfo.status = TASK_FAILED
-		return
-	}
-
-	client, err := GetClient(taskinfo.url)
-	if err != nil {
-		logger.Error(err)
-		taskinfo.status = TASK_FAILED
-		return
-	}
-
 	retryTime := 3
 	for retryTime > 0 {
 		retryTime--
+		t.fileSize, err = GetService().remoteFileSize(t.url)
+		if err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		client, err := GetClient(t.url)
+		if err != nil {
+			logger.Error(err)
+			continue
+		}
+
 		if client.SupportRange() {
-			err = t.checkLocalFileDupAndDownload(taskinfo, 0)
-			if err != nil {
-				logger.Error(err)
-				taskinfo.status = TASK_FAILED
-				return
-			}
+			err = t.checkLocalFileDupAndDownload(0)
 		} else {
-			request, _ := client.NewRequest(taskinfo.url)
-			request.ConnectProgress(taskinfo.progress)
-			request.ConnectStatusCheck(taskinfo.checkTaskStatus)
-			err = request.Download(taskinfo.localFile)
-			if err != nil {
-				logger.Error(err)
-				taskinfo.status = TASK_FAILED
-				return
-			}
+			request, _ := client.NewRequest(t.url)
+			request.ConnectProgress(t.progress)
+			request.ConnectStatusCheck(t.Status)
+			err = request.Download(t.localFile)
+		}
+		if err != nil {
+			logger.Error(err)
+			continue
 		}
 
 		//verfiy MD5
-		if 0 != len(taskinfo.md5) {
-			fileMD5 := VerifyMD5(taskinfo.localFile)
-			logger.Warningf("[VerifyMD5] dwonload: %v, check: %v, taskid %v", fileMD5, taskinfo.md5, taskinfo.taskid)
-			if taskinfo.md5 != fileMD5 {
-				logger.Warningf("[VerifyMD5] dwonload: %v, check: %v, taskid %v, task.file %v, task.url %v", fileMD5, taskinfo.md5, taskinfo.taskid, taskinfo.localFile, taskinfo.url)
-				os.Remove(taskinfo.localFile)
+		if 0 != len(t.md5) {
+			fileMD5, _ := utils.SysMd5Sum(t.localFile)
+			if t.md5 != fileMD5 {
+				logger.Warningf("[VerifyMD5] dwonload: %v, check: %v, ID %v, task.file %v, task.url %v",
+					fileMD5, t.md5, t.ID, t.localFile, t.url)
+				os.Remove(t.localFile)
 				time.Sleep(100 * time.Millisecond)
 				continue
-			} else {
-				taskinfo.status = TASK_SUCCESS
-				return
 			}
 		}
 
-	}
-	if retryTime <= 0 {
-		taskinfo.status = TASK_FAILED
-		return
+		t.status = TaskSuccess
+		return nil
 	}
 
-	taskinfo.status = TASK_SUCCESS
+	if retryTime <= 0 {
+		t.status = TaskFailed
+	}
+	return TransferError(fmt.Sprintf("Download Transfer Fialed: %v", t.ID))
 }
 
-func (t *Transfer) quickDownload(taskinfo *TranferTaskInfo) (sucess bool) {
-	logger.Infof("[qucikDownload] %v", taskinfo.localFile)
-	if 0 == len(taskinfo.md5) {
+func (t *Transfer) quickDownload() (sucess bool) {
+	if 0 == len(t.md5) {
 		return false
 	}
-
-	if taskinfo.md5 != VerifyMD5(taskinfo.localFile) {
+	fileMD5, _ := utils.SysMd5Sum(t.localFile)
+	if t.md5 != fileMD5 {
 		return false
 	}
 	return true
 }
 
-/*
-@description
-    check localfile, if exist, append a num to the end of the localfile name or
-    overwrite depend ondup
-@input
-    taskinfo: the info about download task
-    ondup:    0 : overwrite; 1 : crete new localfile name
-    duptime:  if the the new filename dup again, it increas, to generate a new filename
-@return
-    errors when download file
-*/
-func (t *Transfer) checkLocalFileDupAndDownload(taskinfo *TranferTaskInfo, duptime int) error {
-	logger.Info("checkDupDownload enter")
-	if isFileExist(taskinfo.localFile) {
-		if t.quickDownload(taskinfo) {
-			logger.Infof("[qucikDownload] %v success", taskinfo.localFile)
+func (t *Transfer) checkLocalFileDupAndDownload(duptime int) error {
+	logger.Info("[checkLocalFileDupAndDownload] Enter")
+	if utils.IsFileExist(t.localFile) {
+		if t.quickDownload() {
+			logger.Infof("[checkLocalFileDupAndDownload] QuickDownload %v success", t.localFile)
 			return nil
 		}
 
-		taskinfo.dlStatusFile = taskinfo.localFile + ".dlst"
-		if isFileExist(taskinfo.dlStatusFile) {
-			return t.breakpointDownloadFile(taskinfo)
+		t.statusFile = t.localFile + ".tfst"
+		if utils.IsFileExist(t.statusFile) {
+			return t.breakpointDownloadFile()
 		} else {
-			if 0 == taskinfo.overdup {
-				return t.downloadFile(taskinfo)
-			} else if 1 == taskinfo.overdup {
-				taskinfo.localFile = taskinfo.originLocalFilename + "." + strconv.Itoa(duptime)
+			if OnDupOverWrite == t.ondup {
+				return t.downloadFile()
+			} else if OnDupRename == t.ondup {
+				t.localFile = t.originLocalFileName + "." + strconv.Itoa(duptime)
 				duptime += 1
 				//file name dup again, get new
-				return t.checkLocalFileDupAndDownload(taskinfo, duptime)
+				return t.checkLocalFileDupAndDownload(duptime)
 			} else {
-				return TransferError("Error ondup value: ")
+				return TransferError(fmt.Sprintf("Error ondup value: %v", t.ondup))
 			}
 		}
 	} else {
-		return t.downloadFile(taskinfo)
+		return t.downloadFile()
 	}
 }
 
-/*
-@description
-    create new download status file *.dlst
-    file fomat{
-        [FileSize int32 ][block Size int32 ][block Num int32 ][All Block []Byte]
-    }
-@input
-    dlStatusFile: download status file name
-    blockSize:    block size every time download
-    fileSize:     total file size in server
-@return
-    errors
-*/
-func (t *Transfer) newdlstFile(dlStatusFile string, blockSize int64, fileSize int64) error {
-	logger.Info("newdlstFile params: dlstatusFile, blockSize, fileSize", dlStatusFile, blockSize, fileSize)
-	f, err := os.Create(dlStatusFile)
-	defer f.Close()
-	if err != nil {
-		logger.Error(err)
-		return err
-	} else {
-		blockNum := fileSize / blockSize
-		if blockNum*blockSize < fileSize {
-			blockNum += 1
-		}
-		dlst := DownloadStatusInfo{
-			fileSize,
-			blockSize,
-			blockNum,
-			make([]byte, blockNum),
-		}
-		buf := new(bytes.Buffer)
-		err = binary.Write(buf, binary.LittleEndian, fileSize)
-		err = binary.Write(buf, binary.LittleEndian, dlst.blockSize)
-		err = binary.Write(buf, binary.LittleEndian, dlst.blockNum)
-		err = binary.Write(buf, binary.LittleEndian, dlst.blockStat)
-		_, err = f.Write(buf.Bytes())
-		if err != nil {
-			logger.Error("binary.Write failed:", err)
-			return err
-		}
-	}
-	return nil
-}
-
-func removedlstFile(dlStatusFile string) error {
-	logger.Info("removedlstFile enter")
-	err := os.Remove(dlStatusFile)
-	return err
-}
-
-/*
-@description
-    create new download status file *.dlst
-    file fomat{
-        [FileSize int32 ][block Size int32 ][block Num int32 ][All Block []Byte]
-    }
-@input
-    dlStatusFile: download status file name
-    dlstInfo:     download status info
-@return
-    errors
-*/
-func savedlstFile(dlStatusFile string, dlstInfo DownloadStatusInfo) error {
-	//	logger.Info("savedlstFile enter")
-	f, err := os.OpenFile(dlStatusFile, os.O_TRUNC|os.O_RDWR, 0666)
-	defer f.Close()
-	if err != nil {
-		logger.Error(err)
-		return err
-	} else {
-		buf := new(bytes.Buffer)
-		err = binary.Write(buf, binary.LittleEndian, dlstInfo.fileSize)
-		err = binary.Write(buf, binary.LittleEndian, dlstInfo.blockSize)
-		err = binary.Write(buf, binary.LittleEndian, dlstInfo.blockNum)
-		err = binary.Write(buf, binary.LittleEndian, dlstInfo.blockStat)
-		_, err = f.Write(buf.Bytes())
-		if err != nil {
-			logger.Error("binary.Write failed:", err)
-			return err
-		}
-		f.Sync()
-	}
-	return nil
-
-}
-
-/*
-@description
-    load download status file *.dlst
-    file fomat{
-        [FileSize int32 ][block Size int32 ][block Num int32 ][All Block []Byte]
-    }
-@input
-    dlStatusFile: download status file name
-@return
-    DownloadStatusInfo: download status info read from file
-    error: errors
-*/
-func loaddlstFile(dlStatusFile string) (DownloadStatusInfo, error) {
-	//	logger.Info("loaddlstFile enter")
-	dlstfile, err := os.Open(dlStatusFile)
-	defer dlstfile.Close()
-	dlst := new(DownloadStatusInfo)
-	if err != nil {
-		logger.Error(err)
-		return *dlst, err
-	} else {
-		stats, err := dlstfile.Stat()
-		if err != nil {
-			logger.Error(err)
-			return *dlst, err
-		}
-
-		size := stats.Size()
-		bytesbuf := make([]byte, size)
-		bufr := bufio.NewReader(dlstfile)
-		_, err = bufr.Read(bytesbuf)
-		if err != nil {
-			logger.Error(err)
-			return *dlst, err
-		}
-
-		buf := bytes.NewReader(bytesbuf)
-		err = binary.Read(buf, binary.LittleEndian, &dlst.fileSize)
-		err = binary.Read(buf, binary.LittleEndian, &dlst.blockSize)
-		err = binary.Read(buf, binary.LittleEndian, &dlst.blockNum)
-		dlst.blockStat = make([]byte, dlst.blockNum)
-		err = binary.Read(buf, binary.LittleEndian, &dlst.blockStat)
-		if err != nil {
-			logger.Error(err)
-			return *dlst, err
-		}
-	}
-	return *dlst, nil
-}
-
-func (taskinfo *TranferTaskInfo) checkTaskStatus() int32 {
+func (t *Transfer) Status() int32 {
 	for {
 		select {
-		case taskinfo.status = <-taskinfo.taskStatusChan:
-			switch taskinfo.status {
-			case TASK_ST_CANCEL:
-				logger.Info("Tasker", taskinfo.taskid, " : Cancel\n")
-				return taskinfo.status
-			case TASK_ST_RUNING:
-				logger.Info("Tasker", taskinfo.taskid, " : Resume\n")
-			case TASK_ST_PAUSE:
-				logger.Info("Tasker", taskinfo.taskid, " : Pause\n")
+		case t.status = <-t.taskStatusChan:
+			switch t.status {
+			case TaskCancel:
+				logger.Info("Tasker", t.ID, " : Cancel\n")
+				return t.status
+			case TaskStart:
+				logger.Info("Tasker", t.ID, " : Resume\n")
+			case TaskPause:
+				logger.Info("Tasker", t.ID, " : Pause\n")
 			}
 
 		default:
 			runtime.Gosched()
-			if taskinfo.status != TASK_ST_RUNING {
+			if t.status != TaskStart {
 				break //select
 			}
-			return taskinfo.status //must be TASK_ST_RUNING
+			return t.status //must be TaskStart
 		}
 	}
-	return taskinfo.status
+	return t.status
 }
 
-/*
-@description
-    breakpointDownloadFile
-@input
-    taskinfo: download task info
-@return
-    error: errors
-*/
-func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
-	logger.Info("breakpointDownloadFile enter")
-	dlst, err := loaddlstFile(taskinfo.dlStatusFile)
+func (t *Transfer) breakpointDownloadFile() error {
+	logger.Info("[breakpointDownloadFile] Enter")
+	tfst, err := LoadTransferStatus(t.statusFile)
 	if err != nil {
 		logger.Error(err)
 		return err
 	}
-	dlfile, err := os.OpenFile(taskinfo.localFile, os.O_CREATE|os.O_RDWR, 0755)
+
+	logger.Warning(tfst)
+	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, 0755)
 	defer dlfile.Close()
 	if err != nil {
 		logger.Error(err)
@@ -650,30 +225,29 @@ func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
 	// TODO:
 	//if remote filesize is ZERO, should download yet
 	var client Client
-	client, err = GetClient(taskinfo.url)
-	request, _ := client.NewRequest(taskinfo.url)
-	request.ConnectStatusCheck(taskinfo.checkTaskStatus)
-	request.ConnectProgress(taskinfo.progress)
-	for index, value := range dlst.blockStat {
-		logger.Info("BlocakStatus[", index+1, "/", dlst.blockNum, "]: ", value)
-		if 0 == value {
-			curblock := int64(index)
-			beginByte := curblock * dlst.blockSize
-			endByte := (curblock + 1) * dlst.blockSize
+	client, err = GetClient(t.url)
+	request, _ := client.NewRequest(t.url)
+	request.ConnectStatusCheck(t.Status)
+	request.ConnectProgress(t.progress)
+	for index, slice := range tfst.blockStat {
+		logger.Info("BlocakStatus[", index+1, "/", tfst.blockNum, "]: ", slice)
+		curblock := int64(index)
+		slice.begin = curblock * tfst.blockSize
+		slice.end = (curblock + 1) * tfst.blockSize
+		if slice.end > t.fileSize {
+			slice.end = t.fileSize
+		}
+		if slice.finish < (slice.end - slice.begin) {
 			//TODO, size is not zero
-			if endByte > taskinfo.fileSize {
-				endByte = taskinfo.fileSize
-			}
-
 			var data []byte
-			data, err = request.DownloadRange(beginByte, endByte)
+			data, err = request.DownloadRange(slice.begin, slice.end)
 			retryTime := HttpRetryTimes
 			err = nil
 			for retryTime > 0 {
 				retryTime--
 				if nil != err {
 					time.Sleep(200 * time.Duration(HttpRetryTimes-retryTime) * time.Millisecond)
-					data, err = request.DownloadRange(beginByte, endByte)
+					data, err = request.DownloadRange(slice.begin, slice.end)
 				} else {
 					break
 				}
@@ -682,121 +256,69 @@ func (t *Transfer) breakpointDownloadFile(taskinfo *TranferTaskInfo) error {
 				logger.Error(err)
 				return err
 			}
-			dlfile.WriteAt(data, int64(beginByte))
+			dlfile.WriteAt(data, int64(slice.begin))
 			dlfile.Sync()
-			dlst.blockStat[index] = 1
-			savedlstFile(taskinfo.dlStatusFile, dlst)
+			slice.finish = slice.end - slice.begin
+			tfst.Sync(curblock, slice)
 		}
 	}
-	//make sure success download when return here
-	removedlstFile(taskinfo.dlStatusFile)
+	//	tfst.Remove()
 	return nil
 }
 
-/*
-@description
-    just download File with create new localfile and dlst file
-@input
-    taskinfo: download task info
-@return
-    error: errors
-*/
-func (t *Transfer) downloadFile(taskinfo *TranferTaskInfo) error {
-	dlStatusFile := taskinfo.localFile + ".dlst"
-	blockSize := calcBlockSize(taskinfo.fileSize)
-	err := t.newdlstFile(dlStatusFile, blockSize, taskinfo.fileSize)
+func (t *Transfer) downloadFile() error {
+	statusFile := t.localFile + ".tfst"
+	blockSize := calcBlockSize(t.fileSize)
+	tfst, err := NewTransferStatus(statusFile, blockSize, t.fileSize)
+	logger.Warning(tfst)
 	if err != nil {
 		logger.Error(err)
 		return err
 	} else {
-		taskinfo.dlStatusFile = dlStatusFile
-		return t.breakpointDownloadFile(taskinfo)
+		tfst.Close()
+		t.statusFile = statusFile
+		return t.breakpointDownloadFile()
 	}
 }
 
-/*
-@description
-    calc download BlockSize depend remote filesize
-    by test, 4M, 8M block has the fast download speed
-    and block should not to small
-    mini block size 2M
-    max block size 8M
-input
-    remotefilesize: remote file size
-@return
-    error: errors
-*/
-
+//calcBlockSize depend remote filesize
+//by test, 4M, 8M block has the fast download speed
+//and block should not to small
+//mini block size 2M
+//max block size 8M
 func calcBlockSize(remotefilesize int64) int64 {
-	blockSize := int64(SIZE_1M)
+	blockSize := int64(Mega)
 
-	basicSize := remotefilesize / (8 * SIZE_1M)
+	basicSize := remotefilesize / (8 * Mega)
 
 	switch basicSize {
 	case 0:
-		blockSize = 2 * SIZE_1M
+		blockSize = 2 * Mega
 	case 1:
-		blockSize = 2 * SIZE_1M
+		blockSize = 2 * Mega
 	case 2:
-		blockSize = 2 * SIZE_1M
+		blockSize = 2 * Mega
 	case 3:
-		blockSize = 2 * SIZE_1M
+		blockSize = 2 * Mega
 	case 4:
-		blockSize = 4 * SIZE_1M
+		blockSize = 4 * Mega
 	case 5:
-		blockSize = 4 * SIZE_1M
+		blockSize = 4 * Mega
 	case 6:
-		blockSize = 4 * SIZE_1M
+		blockSize = 4 * Mega
 	case 7:
-		blockSize = 4 * SIZE_1M
+		blockSize = 4 * Mega
 	case 8:
-		blockSize = 8 * SIZE_1M
+		blockSize = 8 * Mega
 	default:
-		blockSize = 8 * SIZE_1M
+		blockSize = 8 * Mega
 	}
 
 	return blockSize
 }
 
-func (taskinfo *TranferTaskInfo) progress(deta int64, downloaded int64, total int64) {
-	taskinfo.detaSize += int64(deta)
-	taskinfo.downloadSize = downloaded
-	taskinfo.totalSize = taskinfo.fileSize
-}
-
-func (t *Transfer) startProgressReportTimer() {
-	timer := time.NewTimer(900 * time.Millisecond)
-	for {
-		select {
-		case <-timer.C:
-			t.handleProgressReport()
-			timer.Reset(900 * time.Millisecond)
-		}
-	}
-}
-
-func (t *Transfer) handleProgressReport() {
-	//	logger.Warningf("workTask Len: %v", t.workTasks.Len())
-	for element := t.workTasks.Front(); element != nil; element = element.Next() {
-		if taskinfo, ok := element.Value.(*TranferTaskInfo); ok {
-			//logger.Warning("Report Progress of", taskinfo.taskid, " size ", taskinfo.detaSize)
-			t.ProcessReport(taskinfo.taskid, taskinfo.detaSize, taskinfo.downloadSize, taskinfo.fileSize)
-			taskinfo.detaSize = 0
-		}
-	}
-}
-
-func (t *Transfer) startDaemon() {
-	t.daemonTimer = time.NewTimer(60 * time.Second)
-	for {
-		select {
-		case <-t.daemonTimer.C:
-			if 0 == len(t.tasks) {
-				QuitAllFtpClient()
-				os.Exit(0)
-			} else {
-				t.daemonTimer.Reset(60 * time.Second)
-			}
-		}
-	}
+func (t *Transfer) progress(deta int64, downloaded int64, total int64) {
+	t.detaSize += int64(deta)
+	t.downloadSize = downloaded
+	t.totalSize = t.fileSize
 }

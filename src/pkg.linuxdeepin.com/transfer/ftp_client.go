@@ -24,7 +24,6 @@ type FtpClient struct {
 	username     string
 	password     string
 	key          string
-	tasks        map[string](*TranferTaskInfo)
 	c            *ftp.ServerConn
 
 	dataLock sync.Mutex
@@ -104,7 +103,7 @@ func (r *FtpRequest) Download(localFilePath string) error {
 	writtenBytes := int64(0)
 	buf := make([]byte, 0, capacity)
 	for {
-		if TASK_ST_CANCEL == r.statusCheck() {
+		if TaskCancel == r.statusCheck() {
 			return TransferError("Download Cancel")
 		}
 		m, e := data.Read(buf[len(buf):cap(buf)])
@@ -171,7 +170,7 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	capacity := end - begin
 	buf := make([]byte, 0, capacity)
 	for {
-		if TASK_ST_CANCEL == r.statusCheck() {
+		if TaskCancel == r.statusCheck() {
 			return nil, TransferError("Download Cancel")
 		}
 		m, e := data.Read(buf[len(buf):cap(buf)])
@@ -226,7 +225,6 @@ func GetFtpClient(username string, password string, addr string) (*FtpClient, er
 			return nil, TransferError("Login Ftp Server Failed")
 		}
 
-		client.tasks = map[string](*TranferTaskInfo){}
 		client.dataLock = sync.Mutex{}
 		client.cmdLock = sync.Mutex{}
 		client.key = key
@@ -264,7 +262,7 @@ func (p *FtpClient) unlockData() {
 	p.dataLock.Unlock()
 }
 
-func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
+func (p *FtpClient) Download(t *Transfer, ftpPath string) error {
 	p.lockData()
 	defer p.unlockData()
 
@@ -276,11 +274,11 @@ func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
 		return TransferError("Download Cancel")
 	}
 
-	capacity := taskinfo.fileSize + 512
+	capacity := t.fileSize + 512
 	buf := make([]byte, 0, capacity*2)
 	for {
 		//checkTaskStatus will block if status is pause
-		if TASK_ST_CANCEL == taskinfo.checkTaskStatus() {
+		if TaskCancel == t.Status() {
 			return TransferError("Download Cancel")
 		}
 		m, e := r.Read(buf[len(buf):cap(buf)])
@@ -291,10 +289,10 @@ func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
 			buf = newBuf[:len(buf)]
 			//logger.Warning("extern", cap(buf), buf)
 		}
-		taskinfo.detaSize += int64(m)
-		taskinfo.downloadSize = 0 + int64(len(buf))
-		taskinfo.totalSize = taskinfo.fileSize
-		GetTransfer().ProcessReport(taskinfo.taskid, int64(m), int64(len(buf)), taskinfo.fileSize)
+		t.detaSize += int64(m)
+		t.downloadSize = 0 + int64(len(buf))
+		t.totalSize = t.fileSize
+		GetService().ProcessReport(t.ID, int64(m), int64(len(buf)), t.fileSize)
 
 		if e == io.EOF {
 			logger.Warning(e)
@@ -310,7 +308,7 @@ func (p *FtpClient) Download(taskinfo *TranferTaskInfo, ftpPath string) error {
 
 	r.Close()
 	//write to file
-	dlfile, err := os.OpenFile(taskinfo.localFile, os.O_CREATE|os.O_RDWR, 0755)
+	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, 0755)
 	defer dlfile.Close()
 	if err != nil {
 		logger.Error(err)
