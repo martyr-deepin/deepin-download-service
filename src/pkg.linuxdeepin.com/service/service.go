@@ -37,14 +37,6 @@ const (
 )
 
 const (
-	C_FREE_PROCESS = int32(0x40)
-)
-
-const (
-	TS_FINISH = int32(0x10)
-)
-
-const (
 	TASK_START    = int32(0x10)
 	TASK_SUCCESS  = int32(0x11)
 	TASK_FAILED   = int32(0x12)
@@ -257,23 +249,23 @@ func (p *Service) onProcessReport(transferID string, detaSize int64, finishSize 
 	}
 }
 
-func (p *Service) onTransferFinish(transferID string, retCode int32) {
-	logger.Infof("[onTransferFinish] Download %v Finist with return Code %v", transferID, retCode)
-
-	dl := QueryDownloader(transferID)
-	if nil == dl {
-		//	logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
-		return
-	}
-
-	//when the finish task is full, this chan will block
-	//but when you start a new task, it will recover
-	//let it write async
+func (p *Service) finishDownloader(dl *Downloader, retCode int32) {
+	logger.Infof("[finishDownloader] Download %v Finist with return Code %v", dl.ID, retCode)
 	for _, task := range dl.refTasks {
 		task.FinishDownloaderHook(dl, retCode)
 	}
 
 	dl.Finish()
+}
+
+func (p *Service) onTransferFinish(transferID string, retCode int32) {
+	logger.Infof("[onTransferFinish] Download %v Finist with return Code %v", transferID, retCode)
+	dl := QueryDownloader(transferID)
+	if nil == dl {
+		//	logger.Warning("[onProcessReport], nil pkg with transferID: ", transferID)
+		return
+	}
+	p.finishDownloader(dl, retCode)
 }
 
 //AddTask will add download task to transfer queue and return
@@ -408,12 +400,15 @@ func (p *Service) taskDownlowner() {
 	}
 }
 
-func (p *Service) downloaderDispatch() {
+func (s *Service) downloaderDispatch() {
 	for {
 		select {
-		case dl := <-p.downloadQueue:
+		case dl := <-s.downloadQueue:
 			logger.Warning("start dl", dl.ID)
-			dl.Start()
+			err := dl.Start()
+			if nil != err {
+				s.finishDownloader(dl, TASK_FAILED)
+			}
 		}
 	}
 }

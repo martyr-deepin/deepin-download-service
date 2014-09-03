@@ -46,6 +46,15 @@ const (
 	C_INVAILD_TRANSFERID = ""
 )
 
+func init() {
+	if nil == _downloaderCache {
+		_downloaderCache = map[string](*Downloader){}
+	}
+	if nil == _downloaderIndex {
+		_downloaderIndex = map[string](*Downloader){}
+	}
+}
+
 func GetUrlFileName(url string) string {
 	list := strings.Split(url, "/")
 	return list[len(list)-1]
@@ -75,9 +84,6 @@ func newDownloader(url string, totalSize int64, md5 string, storeDir string, fil
 var _downloaderCache map[string](*Downloader)
 
 func GetDownloader(url string, totalSize int64, md5 string, storeDir string, fileName string) *Downloader {
-	if nil == _downloaderCache {
-		_downloaderCache = map[string](*Downloader){}
-	}
 	key := url + storeDir
 	dl := _downloaderCache[key]
 	if nil == dl {
@@ -91,16 +97,10 @@ func GetDownloader(url string, totalSize int64, md5 string, storeDir string, fil
 var _downloaderIndex map[string](*Downloader)
 
 func IndexDownloader(transferID string, dl *Downloader) {
-	if nil == _downloaderIndex {
-		_downloaderIndex = map[string](*Downloader){}
-	}
 	_downloaderIndex[transferID] = dl
 }
 
 func QueryDownloader(transferID string) *Downloader {
-	if nil == _downloaderIndex {
-		_downloaderIndex = map[string](*Downloader){}
-	}
 	return _downloaderIndex[transferID]
 }
 
@@ -160,13 +160,13 @@ func (p *Downloader) Resume() error {
 }
 
 func (p *Downloader) Cancel() error {
+	p.status = DownloaderCancel
+	p.transferID = ""
 	result, err := TransferDbus().Cancel(p.transferID)
 	if (0 != result) || (nil != err) {
 		ret := fmt.Sprintf("Cancel Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
 	}
-	p.status = DownloaderCancel
-	p.transferID = ""
 	return nil
 }
 
