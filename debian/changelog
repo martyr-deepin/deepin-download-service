@@ -1,5 +1,5 @@
-deepin-download-service (0.1+git20140812) trusty; urgency=low
+deepin-download-service (0.1+git20140902) trusty; urgency=medium
 
-  * Initial release. 
+  * repackaging
 
- -- Deepin Packages Builder <packages@linuxdeepin.com>  Wed, 13 Aug 2014 20:16:21 +0800
+ -- 宋文武 <songwenwu@linuxdeepin.com>  Wed, 03 Sep 2014 18:02:51 +0800
