@@ -232,22 +232,22 @@ func (t *Transfer) breakpointDownloadFile() error {
 	for index, slice := range tfst.blockStat {
 		logger.Info("BlocakStatus[", index+1, "/", tfst.blockNum, "]: ", slice)
 		curblock := int64(index)
-		slice.begin = curblock * tfst.blockSize
-		slice.end = (curblock + 1) * tfst.blockSize
-		if slice.end > t.fileSize {
-			slice.end = t.fileSize
+		slice.Begin = curblock * tfst.blockSize
+		slice.End = (curblock + 1) * tfst.blockSize
+		if slice.End > t.fileSize {
+			slice.End = t.fileSize
 		}
-		if slice.finish < (slice.end - slice.begin) {
+		if slice.Finish < (slice.End - slice.Begin) {
 			//TODO, size is not zero
 			var data []byte
-			data, err = request.DownloadRange(slice.begin, slice.end)
+			data, err = request.DownloadRange(slice.Begin, slice.End)
 			retryTime := HttpRetryTimes
 			err = nil
 			for retryTime > 0 {
 				retryTime--
 				if nil != err {
 					time.Sleep(200 * time.Duration(HttpRetryTimes-retryTime) * time.Millisecond)
-					data, err = request.DownloadRange(slice.begin, slice.end)
+					data, err = request.DownloadRange(slice.Begin, slice.End)
 				} else {
 					break
 				}
@@ -256,13 +256,13 @@ func (t *Transfer) breakpointDownloadFile() error {
 				logger.Error(err)
 				return err
 			}
-			dlfile.WriteAt(data, int64(slice.begin))
+			dlfile.WriteAt(data, int64(slice.Begin))
 			dlfile.Sync()
-			slice.finish = slice.end - slice.begin
+			slice.Finish = slice.End - slice.Begin
 			tfst.Sync(curblock, slice)
 		}
 	}
-	//	tfst.Remove()
+	tfst.Remove()
 	return nil
 }
 
@@ -275,7 +275,6 @@ func (t *Transfer) downloadFile() error {
 		logger.Error(err)
 		return err
 	} else {
-		tfst.Close()
 		t.statusFile = statusFile
 		return t.breakpointDownloadFile()
 	}
