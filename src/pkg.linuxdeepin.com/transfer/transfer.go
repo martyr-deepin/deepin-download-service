@@ -38,9 +38,8 @@ const (
 	TaskSuccess = int32(0x11)
 	TaskFailed  = int32(0x12)
 	TaskNoExist = int32(0x13)
-
-	TaskPause  = int32(0x14)
-	TaskCancel = int32(0x15)
+	TaskPause   = int32(0x14)
+	TaskCancel  = int32(0x15)
 )
 
 const (

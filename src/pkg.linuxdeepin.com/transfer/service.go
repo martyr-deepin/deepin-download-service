@@ -128,7 +128,7 @@ ondup: 0 overwrite when dup
 return Download Status
 */
 func (s *Service) Download(url string, localFile string, md5 string, ondup int32) (retCode int32, taskid string) {
-	t := s.GetTask(url, localFile)
+	t := s.getTask(url, localFile)
 	if nil != t {
 		logger.Warningf("[Download] Task Exist, Stop Add this Task: %v", localFile)
 		return ActionSuccess, t.ID
@@ -150,17 +150,7 @@ func (s *Service) QuerySize(url string) int64 {
 	return size
 }
 
-func (s *Service) QueryTaskStatus(taskid string) int32 {
-	logger.Warning("[QueryTaskStatus]", taskid)
-	task := s.transfers[taskid]
-	if nil == task {
-		return TaskNoExist
-	}
-
-	return task.status
-}
-
-func (s *Service) GetTask(url string, localfile string) *Transfer {
+func (s *Service) getTask(url string, localfile string) *Transfer {
 	for _, task := range s.transfers {
 		if (task.url == url) && (task.localFile == localfile) {
 			return task
