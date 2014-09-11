@@ -4,3 +4,9 @@ export GOPATH := /usr/share/gocode
 
 %:
 	dh $@
+
+override_dh_auto_test:
+	./misc/test/pre_test_hook
+	dh_auto_test
+	./misc/test/post_test_hook
+

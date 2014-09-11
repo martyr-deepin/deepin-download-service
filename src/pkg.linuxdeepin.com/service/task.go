@@ -167,7 +167,6 @@ func (p *Task) RefreshStatus() (int32, int32, int32, int32, int64, int64) {
 //Cancel task with error status
 func (p *Task) cancel(errCode int32, errStr string) error {
 	for _, dl := range p.downloaders {
-		logger.Warning(dl, p.downloaders)
 		dl.UnRefTask(p)
 	}
 	if nil != p.CB_Cancel {

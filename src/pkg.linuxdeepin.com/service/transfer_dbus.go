@@ -11,13 +11,14 @@ const (
 
 var _transferDBus *transferAPI.Transfer
 
-func TransferDbus() *transferAPI.Transfer {
+func TransferDbus() (*transferAPI.Transfer, error) {
 	if nil == _transferDBus {
 		var err error
 		_transferDBus, err = transferAPI.NewTransfer(TRANSFER_NAME, TRANSFER_PATH)
 		if nil != err {
-			panic("[init] Connect com.deepin.api.Transfer Failed")
+			return nil, err
+			//	logger.Error("[init] Connect com.deepin.api.Transfer Failed")
 		}
 	}
-	return _transferDBus
+	return _transferDBus, nil
 }

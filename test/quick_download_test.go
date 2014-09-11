@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-func Test_VereifyMD5P(t *testing.T) {
+func TestVereifyMD5P(t *testing.T) {
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",
@@ -23,7 +23,7 @@ func Test_VereifyMD5P(t *testing.T) {
 	waitTaskFinish(t)
 }
 
-func Test_QuickDownload(t *testing.T) {
+func TestQuickDownload(t *testing.T) {
 	dbus := GetDBus()
 	urls := []string{
 		"http://mirrors.aliyun.com/deepin/pool/main/m/monodevelop-4.0/monodevelop-4.0_4.2-1deepin2_amd64.deb",

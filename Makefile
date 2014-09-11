@@ -1,3 +1,5 @@
+.PHONY : test
+	
 CURDIR=$(shell pwd)
 FIXGOPATH=$(CURDIR):$(GOPATH)
 BIN_PATH=$(CURDIR)/bin
@@ -5,9 +7,14 @@ BIN_PATH=$(CURDIR)/bin
 TRANSFER_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/transfer
 SERVICE_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/service
 
-all:
+build:
 	cd $(TRANSFER_SRC) && go build -o $(BIN_PATH)/transfer
 	cd $(SERVICE_SRC)  && go build -o $(BIN_PATH)/deepin-download-service
+
+test:
+	cd $(TRANSFER_SRC) && go test -v
+	cd $(TRANSFER_SRC)/ftp && go test -v
+	cd $(SERVICE_SRC)  && go test -v
 
 install:
 	@mkdir -p $(DESTDIR)/usr/share/dbus-1/system-services

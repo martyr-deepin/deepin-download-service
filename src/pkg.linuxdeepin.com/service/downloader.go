@@ -117,9 +117,15 @@ func DownloadError(errStr string) error {
 }
 
 func (p *Downloader) QuerySize() int64 {
-	size, err := TransferDbus().QuerySize(p.url)
+	transferDBus, err := TransferDbus()
 	if nil != err {
-		logger.Error("%v QuerySize of %v error", p.ID, p.url)
+		return 0
+	}
+
+	size, err := transferDBus.QuerySize(p.url)
+	if nil != err {
+		logger.Errorf("%v QuerySize of %v error", p.ID, p.url)
+		return 0
 	}
 	p.totalSize = size
 	return size
@@ -130,7 +136,12 @@ func (p *Downloader) Start() error {
 		return nil
 	}
 
-	result, transferID, err := TransferDbus().Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
+	transferDBus, err := TransferDbus()
+	if nil != err {
+		return err
+	}
+
+	result, transferID, err := transferDBus.Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
 	if (nil != err) || (result != ActionSuccess) {
 		ret := fmt.Sprintf("Start Transfer Error: Result: %v Error: %v", result, err)
 		return DownloadError(ret)
@@ -142,7 +153,12 @@ func (p *Downloader) Start() error {
 }
 
 func (p *Downloader) Pause() error {
-	result, err := TransferDbus().Pause(p.transferID)
+	transferDBus, err := TransferDbus()
+	if nil != err {
+		return err
+	}
+
+	result, err := transferDBus.Pause(p.transferID)
 	if (0 != result) || (nil != err) {
 		ret := fmt.Sprintf("Puase Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
@@ -151,7 +167,12 @@ func (p *Downloader) Pause() error {
 }
 
 func (p *Downloader) Resume() error {
-	result, err := TransferDbus().Resume(p.transferID)
+	transferDBus, err := TransferDbus()
+	if nil != err {
+		return err
+	}
+
+	result, err := transferDBus.Resume(p.transferID)
 	if (0 != result) || (nil != err) {
 		ret := fmt.Sprintf("Resume Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
@@ -162,7 +183,13 @@ func (p *Downloader) Resume() error {
 func (p *Downloader) Cancel() error {
 	p.status = DownloaderCancel
 	p.transferID = ""
-	result, err := TransferDbus().Cancel(p.transferID)
+
+	transferDBus, err := TransferDbus()
+	if nil != err {
+		return err
+	}
+
+	result, err := transferDBus.Cancel(p.transferID)
 	if (0 != result) || (nil != err) {
 		ret := fmt.Sprintf("Cancel Downloader %v Failed", p.transferID)
 		return DownloadError(ret)

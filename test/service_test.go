@@ -91,7 +91,7 @@ func waitTaskFinish(t *testing.T) {
 	}
 }
 
-func Test_DownloadMuti11Task(t *testing.T) {
+func TestDownloadMuti11Task(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 
@@ -131,7 +131,7 @@ func Test_DownloadMuti11Task(t *testing.T) {
 	t.Log(taskid)
 	waitTaskFinish(t)
 }
-func Test_DownloadMutiTask(t *testing.T) {
+func TestDownloadMutiTask(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
@@ -176,11 +176,11 @@ func handleSingleTaskStop(taskid string) {
 	wait <- T_FAILED
 }
 func handleSigleTaskFinish(taskid string) {
-	fmt.Println("Test_DownloadSingleTask Finish")
+	fmt.Println("TestDownloadSingleTask Finish")
 	wait <- T_PASS
 }
 
-func Test_DownloadSingleTask(t *testing.T) {
+func TestDownloadSingleTask(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
@@ -216,7 +216,7 @@ func handleErrorUrlStop(taskid string) {
 	wait <- T_PASS
 }
 
-func Test_DownloadiErrorUrl(t *testing.T) {
+func TestDownloadiErrorUrl(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
@@ -247,7 +247,7 @@ func handleMD5Stop(taskid string) {
 	wait <- T_FAILED
 }
 
-func Test_VerifyMD5(t *testing.T) {
+func TestVerifyMD5(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
@@ -268,7 +268,7 @@ func Test_VerifyMD5(t *testing.T) {
 
 	waitTaskFinish(t)
 }
-func Test_VierifyMD5Error(t *testing.T) {
+func TestVierifyMD5Error(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{
@@ -332,7 +332,7 @@ func handleSingleTaskResume(taskid string) {
 	resumeChan <- int32(1)
 }
 
-func Test_PauseResume(t *testing.T) {
+func TestPauseResume(t *testing.T) {
 	wait = make(chan int32, 1024)
 	dbus := GetDBus()
 	urls := []string{

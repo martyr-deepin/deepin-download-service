@@ -1,0 +1,27 @@
+#!/bin/sh
+start_path=`pwd`
+exec_path=`echo "$0" | sed 's/\/[^\/]\+$//'`
+cd $exec_path
+shell_path=`pwd`
+cd $start_path
+
+sudo cp $shell_path/../../src/pkg.linuxdeepin.com/transfer/dbus/com.deepin.api.Transfer.service  /usr/share/dbus-1/system-services/
+sudo cp $shell_path/../../src/pkg.linuxdeepin.com/transfer/dbus/com.deepin.api.Transfer.conf /etc/dbus-1/system.d/
+sudo cp $shell_path/../../bin/transfer /usr/lib/deepin-api/transfer
+sudo killall transfer
+sudo $shell_path/../../bin/transfer &
+sudo killall deepin-download-service
+sudo $shell_path/../../bin/deepin-download-service &
+
+#Start ftp server
+sudo killall vsftpd
+
+sudo rm -fr $shell_path/tmp/public
+mkdir -p $shell_path/tmp/public
+echo "Hello, Welcome to test fpt server!" | tee $shell_path/tmp/public/test
+sudo chown root: $shell_path/ftp/vsftpd.conf
+
+sh -c "sleep 30; sudo killall vsftpd" &
+sudo vsftpd $shell_path/ftp/vsftpd.conf -oanon_root=$shell_path/tmp/ &
+
+exit 0

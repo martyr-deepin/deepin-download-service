@@ -174,8 +174,11 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 
 func (p *Service) init() {
 	logger.Info("[init] Init Service")
-	TransferDbus().ConnectFinishReport(p.onTransferFinish)
-	TransferDbus().ConnectProcessReport(p.onProcessReport)
+	transferDBus, err := TransferDbus()
+	if nil == err {
+		transferDBus.ConnectFinishReport(p.onTransferFinish)
+		transferDBus.ConnectProcessReport(p.onProcessReport)
+	}
 	p.maxProcess = 6
 	p.maxTask = 1
 	p.tasks = map[string](*Task){}

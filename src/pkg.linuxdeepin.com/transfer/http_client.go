@@ -164,17 +164,6 @@ func (p *HttpClient) QuerySize(url string) (int64, error) {
 	reqest, _ := http.NewRequest("GET", url, nil)
 	fileSize := int64(0)
 	response, err := p.client.Do(reqest)
-	retryTimes := HttpRetryTimes
-	for 0 < retryTimes {
-		retryTimes--
-		if nil != err {
-			logger.Warningf("[QuerySize] Retry")
-			time.Sleep(100 * time.Duration(HttpRetryTimes-retryTimes) * time.Millisecond)
-			response, err = p.client.Do(reqest)
-		} else {
-			break
-		}
-	}
 
 	if (nil == response) || (nil != err) {
 		return fileSize, TransferError("Http Request Error, Url: " + url)
