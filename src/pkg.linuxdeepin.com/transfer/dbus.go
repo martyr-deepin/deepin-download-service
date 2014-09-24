@@ -19,17 +19,18 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-package main
+package transfer
 
 import (
+	"fmt"
 	"os"
 
 	"pkg.linuxdeepin.com/lib"
 	"pkg.linuxdeepin.com/lib/dbus"
-	dlog "pkg.linuxdeepin.com/lib/log"
+	dlogger "pkg.linuxdeepin.com/lib/log"
 )
 
-var logger = dlog.NewLogger("deepin-download-service")
+var logger = dlogger.NewLogger("dde-api/transfer")
 
 func stringInSlice(a string, list []string) bool {
 	for _, b := range list {
@@ -40,29 +41,26 @@ func stringInSlice(a string, list []string) bool {
 	return false
 }
 
-func main() {
-	logger.Info("[main] deepin-download-service start")
-
-	if !lib.UniqueOnSystem(DBUS_NAME) {
-		logger.Warning("[main] There is aready a deepin-download-service running")
-		os.Exit(0)
-	}
-	service := GetService()
-	if err := dbus.InstallOnSystem(service); nil != err {
-		logger.Error("[main]Install system bus failed", err)
-		os.Exit(1)
+func LoadDBus() error {
+	defer logger.EndTracing()
+	logger.Info("Start Transfer Service")
+	if !lib.UniqueOnSystem(ServiceDest) {
+		logger.Warning("There already has an Transfer daemon running.")
+		return nil
 	}
 
-	logger.SetRestartCommand("/usr/lib/deepin-daemon/deepin-download-service", "--debug")
+	// configure logger
+	logger.SetRestartCommand("/usr/lib/deepin-api/transfer", "--debug")
 	if stringInSlice("-d", os.Args) || stringInSlice("--debug", os.Args) {
-		logger.SetLogLevel(dlog.LevelDebug)
+		logger.SetLogLevel(dlogger.LevelDebug)
 	}
 
-	dbus.DealWithUnhandledMessage()
+	transfer := GetService()
 
-	if err := dbus.Wait(); nil != err {
-		os.Exit(1)
+	err := dbus.InstallOnSystem(transfer)
+	if err != nil {
+		return fmt.Errorf("InstallOnSystem Error", err)
 	}
 
-	os.Exit(0)
+	return nil
 }

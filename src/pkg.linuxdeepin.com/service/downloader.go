@@ -1,4 +1,4 @@
-package main
+package service
 
 import (
 	"errors"
@@ -117,16 +117,9 @@ func DownloadError(errStr string) error {
 }
 
 func (p *Downloader) QuerySize() int64 {
-	transferDBus, err := TransferDbus()
-	if nil != err {
-		return 0
-	}
+	transfer := GetTransfer()
 
-	size, err := transferDBus.QuerySize(p.url)
-	if nil != err {
-		logger.Errorf("%v QuerySize of %v error", p.ID, p.url)
-		return 0
-	}
+	size := transfer.QuerySize(p.url)
 	p.totalSize = size
 	return size
 }
@@ -136,14 +129,11 @@ func (p *Downloader) Start() error {
 		return nil
 	}
 
-	transferDBus, err := TransferDbus()
-	if nil != err {
-		return err
-	}
+	transfer := GetTransfer()
 
-	result, transferID, err := transferDBus.Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
-	if (nil != err) || (result != ActionSuccess) {
-		ret := fmt.Sprintf("Start Transfer Error: Result: %v Error: %v", result, err)
+	result, transferID := transfer.Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
+	if result != ActionSuccess {
+		ret := fmt.Sprintf("Start Transfer Error: Result: %v Error: %v", result)
 		return DownloadError(ret)
 	}
 	p.transferID = transferID
@@ -153,13 +143,10 @@ func (p *Downloader) Start() error {
 }
 
 func (p *Downloader) Pause() error {
-	transferDBus, err := TransferDbus()
-	if nil != err {
-		return err
-	}
+	transfer := GetTransfer()
 
-	result, err := transferDBus.Pause(p.transferID)
-	if (0 != result) || (nil != err) {
+	result := transfer.Pause(p.transferID)
+	if 0 != result {
 		ret := fmt.Sprintf("Puase Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
 	}
@@ -167,13 +154,10 @@ func (p *Downloader) Pause() error {
 }
 
 func (p *Downloader) Resume() error {
-	transferDBus, err := TransferDbus()
-	if nil != err {
-		return err
-	}
+	transfer := GetTransfer()
 
-	result, err := transferDBus.Resume(p.transferID)
-	if (0 != result) || (nil != err) {
+	result := transfer.Resume(p.transferID)
+	if 0 != result {
 		ret := fmt.Sprintf("Resume Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
 	}
@@ -184,13 +168,10 @@ func (p *Downloader) Cancel() error {
 	p.status = DownloaderCancel
 	p.transferID = ""
 
-	transferDBus, err := TransferDbus()
-	if nil != err {
-		return err
-	}
+	transfer := GetTransfer()
 
-	result, err := transferDBus.Cancel(p.transferID)
-	if (0 != result) || (nil != err) {
+	result := transfer.Cancel(p.transferID)
+	if 0 != result {
 		ret := fmt.Sprintf("Cancel Downloader %v Failed", p.transferID)
 		return DownloadError(ret)
 	}

@@ -24,48 +24,25 @@ package main
 import (
 	"os"
 
-	"pkg.linuxdeepin.com/lib"
 	"pkg.linuxdeepin.com/lib/dbus"
-	dlogger "pkg.linuxdeepin.com/lib/log"
+	"pkg.linuxdeepin.com/service"
+	"pkg.linuxdeepin.com/transfer"
 )
 
-var logger = dlogger.NewLogger("dde-api/transfer")
-
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
-
 func main() {
-	defer logger.EndTracing()
-	logger.Info("[main] Start Transfer Service")
-	if !lib.UniqueOnSystem(ServiceDest) {
-		logger.Warning("[main] There already has an Transfer daemon running.")
-		return
+	err := transfer.LoadDBus()
+	if nil != err {
+		os.Exit(1)
 	}
 
-	// configure logger
-	logger.SetRestartCommand("/usr/lib/deepin-api/transfer", "--debug")
-	if stringInSlice("-d", os.Args) || stringInSlice("--debug", os.Args) {
-		logger.SetLogLevel(dlogger.LevelDebug)
-	}
-
-	transfer := GetService()
-
-	err := dbus.InstallOnSystem(transfer)
-	if err != nil {
-		logger.Error("[main] InstallOnSystem Error", err)
-		panic(err)
+	err = service.LoadDBus()
+	if nil != err {
+		os.Exit(1)
 	}
 
 	dbus.DealWithUnhandledMessage()
 
-	if err = dbus.Wait(); err != nil {
-		logger.Error("[main] Lost dbus session:", err)
+	if err := dbus.Wait(); nil != err {
 		os.Exit(1)
 	}
 

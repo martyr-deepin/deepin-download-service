@@ -19,7 +19,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-package main
+package service
 
 import (
 	"bytes"
@@ -174,11 +174,9 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 
 func (p *Service) init() {
 	logger.Info("[init] Init Service")
-	transferDBus, err := TransferDbus()
-	if nil == err {
-		transferDBus.ConnectFinishReport(p.onTransferFinish)
-		transferDBus.ConnectProcessReport(p.onProcessReport)
-	}
+	transferDBus := GetTransfer()
+	transferDBus.FinishReport = p.onTransferFinish
+	transferDBus.ProcessReport = p.onProcessReport
 	p.maxProcess = 6
 	p.maxTask = 1
 	p.tasks = map[string](*Task){}

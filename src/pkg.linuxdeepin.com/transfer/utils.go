@@ -1,4 +1,4 @@
-package main
+package transfer
 
 const (
 	Kilo = 1024

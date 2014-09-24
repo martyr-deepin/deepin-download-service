@@ -1,4 +1,4 @@
-package main
+package transfer
 
 import (
 	"io"
@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"./ftp"
+	"pkg.linuxdeepin.com/ftp"
 )
 
 const (
