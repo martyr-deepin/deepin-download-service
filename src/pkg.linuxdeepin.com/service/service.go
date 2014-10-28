@@ -53,68 +53,69 @@ type Service struct {
 	downloadQueue chan *Downloader
 	//signals
 
-	/*
-		@signal Wait
-			taskid: 任务id
-			任务下载未开始时发出
-	*/
+	//任务下载未开始时发出
 	Wait func(taskid string)
 
-	/*
-		@signal Start
-			taskid: 任务id
-			任务下载开始时发出
-	*/
+	//任务下载开始时发出
 	Start func(taskid string)
 
-	/*
-		@signal Update
-			taskid: 任务id
-		  	process: 下载进度0~100
-			speeds 下载速度 Bytes/s
-			finish 下载完成的url数目
-			total  总共下载的url数目
-			downloadSize 已经下载的数据 Byte
-			totalSize 总共需要下载的数据 Byte
-		每秒钟针对每个任务发出
-	*/
+	//每秒钟针对每个任务发出
+	//taskid: 任务id
+	//process: 下载进度0~100
+	//speeds 下载速度 Bytes/s
+	//finish 下载完成的url数目
+	//total  总共下载的url数目
+	//downloadSize 已经下载的数据 Byte
+	//totalSize 总共需要下载的数据 Byte
 	Update func(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, taotalSize int64)
 
-	/*
-		@signal Finish
-			taskid: 任务id
-		任务完成时发出
-	*/
+	//任务完成时发出
 	Finish func(taskid string)
 
-	/*
-		@signal Pause
-			taskid: 任务id
-		任务暂停时发出
-	*/
+	//任务暂停时发出
 	Pause func(taskid string)
 
-	/*
-		@signal Stop
-			taskid: 任务id
-		任务停止时发出, 任务Stop后会被立即删除，无法再获得任务信息，
-		一般发出Stop信号，则任务任务失败
-	*/
+	//任务停止时发出, 任务Stop后会被立即删除，无法再获得任务信息，
+	//发出Stop信号，则任务任务失败
 	Stop func(taskid string)
 
-	/*
-		@signal Error
-			taskid: 任务id
-		发生错误时发出
-	*/
+	//发生错误时发出
 	Error func(taskid string, errcode int32, errstr string)
 
-	/*
-		@signal Resume
-			taskid: 任务id
-		任务继续时发出
-	*/
+	//任务继续时发出
 	Resume func(taskid string)
+}
+
+func (s *Service) sendWaitSignal(taskid string) {
+	dbus.Emit(s, "Wait", taskid)
+}
+
+func (s *Service) sendStartSignal(taskid string) {
+	dbus.Emit(s, "Start", taskid)
+}
+
+func (s *Service) sendPauseSignal(taskid string) {
+	dbus.Emit(s, "Pause", taskid)
+}
+
+func (s *Service) sendResumeSignal(taskid string) {
+	dbus.Emit(s, "Resume", taskid)
+}
+
+func (s *Service) sendFinishSignal(taskid string) {
+	dbus.Emit(s, "Finish", taskid)
+}
+
+func (s *Service) sendStopSignal(taskid string) {
+	dbus.Emit(s, "Stop", taskid)
+}
+
+func (s *Service) sendUpdateSignal(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, totalSize int64) {
+	dbus.Emit(s, "Update", taskid, progress, speed, finish, total, downloadSize, totalSize)
+}
+
+func (s *Service) sendErrorSignal(taskid string, errCode int32, errStr string) {
+	dbus.Emit(s, "Error", taskid, errCode, errStr)
 }
 
 var _service *Service
@@ -167,7 +168,7 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 	for taskid, task := range p.tasks {
 		progress, curSpeed, finish, total, downloadSize, totalSize := task.RefreshStatus()
 		//		logger.Info(taskid, progress, finish, total, downloadSize, totalSize, curSpeed, "Byte/s")
-		p.Update(taskid, int32(progress), int32(curSpeed), int32(finish), int32(total), downloadSize, totalSize)
+		p.sendUpdateSignal(taskid, int32(progress), int32(curSpeed), int32(finish), int32(total), downloadSize, totalSize)
 	}
 	timer.Reset(1 * time.Second)
 }
@@ -249,7 +250,7 @@ func (p *Service) PauseTask(taskid string) {
 	logger.Infof("[PauseTask] %v", taskid)
 	task.Pause()
 
-	p.Pause(taskid)
+	p.sendPauseSignal(taskid)
 }
 
 //ResumTask will Resume Task
@@ -262,7 +263,7 @@ func (p *Service) ResumeTask(taskid string) {
 	}
 	logger.Infof("[ResumeTask] %v", taskid)
 	task.Resume()
-	p.Resume(taskid)
+	p.sendResumeSignal(taskid)
 }
 
 //StopTask will stop Task and DELETE Task
@@ -275,21 +276,21 @@ func (p *Service) StopTask(taskid string) {
 	task.Stop()
 	p.removeTask(taskid)
 	logger.Infof("[Service] Send task %v Stop signal", taskid)
-	p.Stop(taskid)
+	p.sendStopSignal(taskid)
 }
 
 //StopTask will stop Task and DELETE Task
 func (p *Service) cancelTask(taskid string, errCode int32, errStr string) {
 	p.removeTask(taskid)
 	logger.Infof("[Service] Send task %v Stop signal", taskid)
-	p.Error(taskid, errCode, errStr)
-	p.Stop(taskid)
+	p.sendErrorSignal(taskid, errCode, errStr)
+	p.sendStopSignal(taskid)
 }
 
 func (p *Service) finishTask(taskid string) {
 	p.removeTask(taskid)
 	logger.Infof("[Service] Send task %v Finish signal", taskid)
-	p.Finish(taskid)
+	p.sendFinishSignal(taskid)
 }
 
 //removeTask will stop Task and DELETE Task
@@ -307,7 +308,7 @@ const (
 
 func (p *Service) startTask(task *Task) {
 	logger.Infof("[startTask] %v", task)
-	p.Wait(task.ID)
+	p.sendWaitSignal(task.ID)
 	task.querySize()
 
 	p.taskQueue <- task
@@ -340,7 +341,7 @@ func (p *Service) taskDownlowner() {
 					}
 					if !sendTaskStart {
 						logger.Warning("send task start", task.ID)
-						p.Start(task.ID)
+						p.sendStartSignal(task.ID)
 						sendTaskStart = true
 					}
 				}

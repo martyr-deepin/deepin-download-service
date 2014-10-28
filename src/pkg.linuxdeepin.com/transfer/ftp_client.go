@@ -292,7 +292,7 @@ func (p *FtpClient) Download(t *Transfer, ftpPath string) error {
 		t.detaSize += int64(m)
 		t.downloadSize = 0 + int64(len(buf))
 		t.totalSize = t.fileSize
-		GetService().ProcessReport(t.ID, int64(m), int64(len(buf)), t.fileSize)
+		GetService().sendProcessReportSignal(t.ID, int64(m), int64(len(buf)), t.fileSize)
 
 		if e == io.EOF {
 			logger.Warning(e)

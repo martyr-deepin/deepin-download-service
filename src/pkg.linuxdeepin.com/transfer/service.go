@@ -87,6 +87,23 @@ const (
 	ActionFailed  = int32(1)
 )
 
+//transfer is both lib and dbus, it deal with callback and dbus signal
+
+func (s *Service) sendProcessReportSignal(taskid string, detaBytes int64, finishBytes int64, totalBytes int64) {
+	if nil != s.ProcessReport {
+		s.ProcessReport(taskid, detaBytes, finishBytes, totalBytes)
+	}
+	dbus.Emit(s, "ProcessReport", taskid, detaBytes, finishBytes, totalBytes)
+}
+
+func (s *Service) sendFinishReportSignal(taskid string, statusCode int32) {
+	if nil != s.FinishReport {
+		s.FinishReport(taskid, statusCode)
+	}
+	dbus.Emit(s, "FinishReport", taskid, statusCode)
+
+}
+
 func (s *Service) Resume(taskid string) int32 {
 	logger.Info("[Resume]", taskid)
 	task := s.transfers[taskid]
@@ -112,7 +129,7 @@ func (s *Service) Cancel(taskid string) int32 {
 	task := s.transfers[taskid]
 	delete(s.transfers, taskid)
 	if task != nil {
-		s.FinishReport(taskid, TaskFailed)
+		s.sendFinishReportSignal(taskid, TaskFailed)
 		go func() { task.taskStatusChan <- TaskCancel }()
 		return ActionSuccess
 	}
@@ -196,7 +213,7 @@ func (s *Service) startTask(t *Transfer) {
 
 func (s *Service) finishTask(t *Transfer) {
 	logger.Warningf("[finishTask]: %v %v %v", t.ID, t.url, t.status)
-	s.FinishReport(t.ID, t.status)
+	s.sendFinishReportSignal(t.ID, t.status)
 
 	if nil != t.element {
 		s.workTransfers.Remove(t.element)
@@ -270,7 +287,7 @@ func (s *Service) handleProgressReport() {
 	for element := s.workTransfers.Front(); element != nil; element = element.Next() {
 		if t, ok := element.Value.(*Transfer); ok {
 			//logger.Warning("Report Progress of", task.ID, " size ", task.detaSize)
-			s.ProcessReport(t.ID, t.detaSize, t.downloadSize, t.fileSize)
+			s.sendProcessReportSignal(t.ID, t.detaSize, t.downloadSize, t.fileSize)
 			t.detaSize = 0
 		}
 	}
