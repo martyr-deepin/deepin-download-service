@@ -25,7 +25,7 @@ type TransferStatus struct {
 }
 
 func NewTransferStatus(filePath string, blockSize int64, fileSize int64) (*TransferStatus, error) {
-	logger.Info("[NewTransferStatus] filePath, blockSize, fileSize", filePath, blockSize, fileSize)
+	logger.Info("NewTransferStatus filePath, blockSize, fileSize", filePath, blockSize, fileSize)
 	tfst := &TransferStatus{}
 	tfst.statusFilePath = filePath
 	blockNum := fileSize / blockSize
@@ -39,7 +39,7 @@ func NewTransferStatus(filePath string, blockSize int64, fileSize int64) (*Trans
 
 	err := ioutil.WriteFile(tfst.statusFilePath, tfst.encode(), 0644)
 	if err != nil {
-		logger.Error("[NewTransferStatus] binary.Write failed:", err)
+		logger.Errorf("Write file %v failed: %v", tfst.statusFilePath, err)
 		return nil, err
 	}
 	return tfst, nil
@@ -71,7 +71,7 @@ func (tfst *TransferStatus) Sync(index int64, slice TransferSlice) {
 func (tfst *TransferStatus) Remove() error {
 	tfst.writeLock.Lock()
 	defer tfst.writeLock.Unlock()
-	logger.Info("[Remove]", tfst.statusFilePath)
+	logger.Info("Remove Status File: ", tfst.statusFilePath)
 	err := os.Remove(tfst.statusFilePath)
 	return err
 }

@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+const (
+	DefaultFileMode = 0644
+)
+
 type StatusCheckCallback func() int32
 type ProgressCallback func(int64, int64, int64)
 
@@ -31,8 +35,8 @@ func (rb *RequestBase) ConnectProgress(cbfunc ProgressCallback) {
 
 type Client interface {
 	SupportRange() bool
-	QuerySize(string) (int64, error)
-	NewRequest(string) (Request, error)
+	QuerySize(url string) (int64, error)
+	NewRequest(url string) (Request, error)
 }
 
 func GetClient(url string) (Client, error) {

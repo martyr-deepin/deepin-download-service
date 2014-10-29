@@ -58,7 +58,7 @@ func main() {
 		logger.Error(err)
 		os.Exit(1)
 	}
-
+	logger.Error("daemon Exit")
 	os.Exit(0)
 }
 
@@ -69,9 +69,9 @@ func startDaemon() {
 	for {
 		select {
 		case <-daemonTimer.C:
-			if (transfer.GetService().TotalTaskCount() == 0) && (service.GetService().TotalTaskCount() == 0) {
-				transfer.GetService().Exit()
-				service.GetService().Exit()
+			if (transfer.GetService().TransferCount() == 0) && (service.GetService().TaskCount() == 0) {
+				transfer.GetService().Close()
+				service.GetService().Close()
 				os.Exit(0)
 			}
 			daemonTimer.Reset(DaemonExitTime * time.Second)

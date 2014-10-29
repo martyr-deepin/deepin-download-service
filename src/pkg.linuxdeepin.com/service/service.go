@@ -85,6 +85,7 @@ type Service struct {
 	//任务继续时发出
 	Resume func(taskid string)
 
+	//just for debug
 	cbWait   func(taskid string)
 	cbStart  func(taskid string)
 	cbUpdate func(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, taotalSize int64)
@@ -209,8 +210,8 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 func (p *Service) init() {
 	logger.Info("[init] Init Service")
 	transferDBus := GetTransfer()
-	transferDBus.RegisterFinishReporter(p.onTransferFinish)
-	transferDBus.RegisterProcessReporter(p.onProcessReport)
+	transferDBus.CallBack.RegisterFinishReporter(p.onTransferFinish)
+	transferDBus.CallBack.RegisterProcessReporter(p.onProcessReport)
 	p.maxProcess = 6
 	p.maxTask = 1
 	p.tasks = map[string](*Task){}
@@ -314,11 +315,11 @@ func (p *Service) StopTask(taskid string) {
 	p.sendStopSignal(taskid)
 }
 
-func (p *Service) TotalTaskCount() int64 {
+func (p *Service) TaskCount() int64 {
 	return int64(len(p.tasks))
 }
 
-func (p *Service) Exit() {
+func (p *Service) Close() {
 	//Do Nothing Now
 }
 

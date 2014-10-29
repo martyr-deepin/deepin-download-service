@@ -47,6 +47,11 @@ const (
 	OnDupOverWrite = int32(0x41)
 )
 
+const (
+	downloadRetryTime      = 10
+	rangedownloadRetryTime = 5
+)
+
 type Transfer struct {
 	ID                  string
 	status              int32
@@ -77,7 +82,7 @@ func NewTransfer(url string, localFile string, md5 string, ondup int32) (*Transf
 	t := &Transfer{}
 	t.ID = newTransferID()
 	t.taskStatusChan = make(chan int32)
-	t.status = TaskStart
+	t.status = TaskPause
 	t.md5 = md5
 	t.url = url
 	t.originLocalFileName = localFile
@@ -89,20 +94,26 @@ func NewTransfer(url string, localFile string, md5 string, ondup int32) (*Transf
 }
 
 func (t *Transfer) Download() error {
-	logger.Info("[Download] Start Download url: ", t.url)
+	logger.Info("Start Download url: ", t.url)
+	t.status = TaskStart
 	var err error
-	retryTime := 3
-	for retryTime > 0 {
-		retryTime--
+	retryTime := 0
+	for retryTime < downloadRetryTime {
+		retryInterval := 500 * time.Duration(retryTime*retryTime) * time.Millisecond
+		time.Sleep(retryInterval)
+		retryTime++
+		retryInterval = 500 * time.Duration(retryTime*retryTime) * time.Millisecond
+
+		logger.Infof("Try Download %v %v time, Retry Interval: %v", t.ID, retryTime, retryInterval)
 		t.fileSize, err = GetService().remoteFileSize(t.url)
 		if err != nil {
-			logger.Error(err)
+			logger.Errorf("Try Download %v\n\t[%v/%v] Failed: %v", t.ID, retryTime, downloadRetryTime, err)
 			continue
 		}
 
 		client, err := GetClient(t.url)
 		if err != nil {
-			logger.Error(err)
+			logger.Errorf("Try Download %v\n\t[%v/%v] Failed: %v", t.ID, retryTime, downloadRetryTime, err)
 			continue
 		}
 
@@ -115,7 +126,7 @@ func (t *Transfer) Download() error {
 			err = request.Download(t.localFile)
 		}
 		if err != nil {
-			logger.Error(err)
+			logger.Errorf("Try Download %v\n\t[%v/%v] Failed: %v", t.ID, retryTime, downloadRetryTime, err)
 			continue
 		}
 
@@ -123,10 +134,10 @@ func (t *Transfer) Download() error {
 		if 0 != len(t.md5) {
 			fileMD5, _ := utils.SysMd5Sum(t.localFile)
 			if t.md5 != fileMD5 {
-				logger.Warningf("[VerifyMD5] dwonload: %v, check: %v, ID %v, task.file %v, task.url %v",
-					fileMD5, t.md5, t.ID, t.localFile, t.url)
+				err = fmt.Errorf("VerifyMD5 %v Failed: remote: %v, check: %v, task.file %v, task.url %v",
+					t.ID, fileMD5, t.md5, t.localFile, t.url)
+				logger.Errorf("Try Download %v\n\t[%v/%v] Failed: %v", t.ID, retryTime, downloadRetryTime, err)
 				os.Remove(t.localFile)
-				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 		}
@@ -135,10 +146,11 @@ func (t *Transfer) Download() error {
 		return nil
 	}
 
-	if retryTime <= 0 {
+	if retryTime >= downloadRetryTime {
+		logger.Errorf("Try Download %v\n\t[%v/%v] Failed: %v", t.ID, retryTime, downloadRetryTime, err)
 		t.status = TaskFailed
 	}
-	return TransferError(fmt.Sprintf("Download Transfer Fialed: %v", t.ID))
+	return fmt.Errorf("Download %v Transfer Fialed: %v", t.ID, err)
 }
 
 func (t *Transfer) quickDownload() (sucess bool) {
@@ -153,10 +165,10 @@ func (t *Transfer) quickDownload() (sucess bool) {
 }
 
 func (t *Transfer) checkLocalFileDupAndDownload(duptime int) error {
-	logger.Info("[checkLocalFileDupAndDownload] Enter")
+	logger.Info("Check LocalFile Dup And Download")
 	if utils.IsFileExist(t.localFile) {
 		if t.quickDownload() {
-			logger.Infof("[checkLocalFileDupAndDownload] QuickDownload %v success", t.localFile)
+			logger.Infof("QuickDownload %v success", t.localFile)
 			return nil
 		}
 
@@ -172,7 +184,7 @@ func (t *Transfer) checkLocalFileDupAndDownload(duptime int) error {
 				//file name dup again, get new
 				return t.checkLocalFileDupAndDownload(duptime)
 			} else {
-				return TransferError(fmt.Sprintf("Error ondup value: %v", t.ondup))
+				return fmt.Errorf("Error ondup value: %v", t.ondup)
 			}
 		}
 	} else {
@@ -186,12 +198,12 @@ func (t *Transfer) Status() int32 {
 		case t.status = <-t.taskStatusChan:
 			switch t.status {
 			case TaskCancel:
-				logger.Info("Tasker", t.ID, " : Cancel\n")
+				logger.Info("Task", t.ID, " : Cancel")
 				return t.status
 			case TaskStart:
-				logger.Info("Tasker", t.ID, " : Resume\n")
+				logger.Info("Task", t.ID, " : Resume")
 			case TaskPause:
-				logger.Info("Tasker", t.ID, " : Pause\n")
+				logger.Info("Task", t.ID, " : Pause")
 			}
 
 		default:
@@ -206,18 +218,18 @@ func (t *Transfer) Status() int32 {
 }
 
 func (t *Transfer) breakpointDownloadFile() error {
-	logger.Info("[breakpointDownloadFile] Enter")
+	logger.Infof("Start Breakpoint Download File %v", t.ID)
 	tfst, err := LoadTransferStatus(t.statusFile)
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("Breakpoint Download %v failed: %v. ", t.ID, err)
 		return err
 	}
 
 	logger.Warning(tfst)
-	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, 0755)
+	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, DefaultFileMode)
 	defer dlfile.Close()
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("Breakpoint Download %v failed: %v. ", t.ID, err)
 		return err
 	}
 
@@ -229,7 +241,7 @@ func (t *Transfer) breakpointDownloadFile() error {
 	request.ConnectStatusCheck(t.Status)
 	request.ConnectProgress(t.progress)
 	for index, slice := range tfst.blockStat {
-		logger.Info("BlocakStatus[", index+1, "/", tfst.blockNum, "]: ", slice)
+		logger.Info("BlocakStatus[", index+1, "/", tfst.blockNum, "]: ", slice, "    ", t.ID)
 		curblock := int64(index)
 		slice.Begin = curblock * tfst.blockSize
 		slice.End = (curblock + 1) * tfst.blockSize
@@ -237,22 +249,20 @@ func (t *Transfer) breakpointDownloadFile() error {
 			slice.End = t.fileSize
 		}
 		if slice.Finish < (slice.End - slice.Begin) {
-			//TODO, size is not zero
 			var data []byte
-			data, err = request.DownloadRange(slice.Begin, slice.End)
-			retryTime := HttpRetryTimes
-			err = nil
-			for retryTime > 0 {
-				retryTime--
+			retryTime := 0
+			for retryTime < rangedownloadRetryTime {
+				retryTime++
+				data, err = request.DownloadRange(slice.Begin, slice.End)
 				if nil != err {
-					time.Sleep(200 * time.Duration(HttpRetryTimes-retryTime) * time.Millisecond)
-					data, err = request.DownloadRange(slice.Begin, slice.End)
+					logger.Errorf("DownloadRange %v failed: %v. Try %v/%v", t.ID, err, retryTime, rangedownloadRetryTime)
+					time.Sleep(3000 * time.Duration(retryTime) * time.Millisecond)
 				} else {
 					break
 				}
 			}
 			if err != nil {
-				logger.Error(err)
+				logger.Errorf("DownloadRange %v failed: %v. Try %v/%v", t.ID, err, retryTime, rangedownloadRetryTime)
 				return err
 			}
 			dlfile.WriteAt(data, int64(slice.Begin))
@@ -271,7 +281,7 @@ func (t *Transfer) downloadFile() error {
 	tfst, err := NewTransferStatus(statusFile, blockSize, t.fileSize)
 	logger.Warning(tfst)
 	if err != nil {
-		logger.Error(err)
+		logger.Error(t.ID, err)
 		return err
 	} else {
 		t.statusFile = statusFile
@@ -319,4 +329,12 @@ func (t *Transfer) progress(deta int64, downloaded int64, total int64) {
 	t.detaSize += int64(deta)
 	t.downloadSize = downloaded
 	t.totalSize = t.fileSize
+}
+
+func (t *Transfer) String() string {
+	return fmt.Sprintf("Taskid: %v\nStatus: %v\nUrl: %v\nMD5: %v\n"+
+		"OnDup: %v\nFileSize: %v\nFileName: %v\nLocalFile: %v\nStatusFile: %v\n"+
+		"DownLoadSize: %v\nTotalSize: %v", t.ID, t.status, t.url, t.md5,
+		t.ondup, t.fileSize, t.fileName, t.localFile, t.statusFile,
+		t.downloadSize, t.totalSize)
 }

@@ -9,5 +9,5 @@ const (
 )
 
 func init() {
-	os.Mkdir(TmpDir, 0755)
+	os.Mkdir(TmpDir, DefaultFileMode)
 }

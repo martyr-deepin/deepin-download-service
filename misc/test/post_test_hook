@@ -4,7 +4,7 @@ sudo killall transfer
 sudo killall deepin-download-service
 sudo killall vsftpd
 
-sudo rm /usr/share/dbus-1/system-services/com.deepin.api.Transfer.service
-sudo rm /etc/dbus-1/system.d/com.deepin.api.Transfer.conf
-sudo rm /usr/lib/deepin-api/transfer
+#sudo rm /usr/share/dbus-1/system-services/com.deepin.api.Transfer.service
+#sudo rm /etc/dbus-1/system.d/com.deepin.api.Transfer.conf
+#sudo rm /usr/lib/deepin-api/transfer
 exit 0

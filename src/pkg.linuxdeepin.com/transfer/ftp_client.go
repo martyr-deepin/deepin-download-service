@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -85,7 +86,7 @@ func (r *FtpRequest) Download(localFilePath string) error {
 		}
 	}()
 
-	dlfile, err := os.OpenFile(localFilePath, os.O_CREATE|os.O_RDWR, 0755)
+	dlfile, err := os.OpenFile(localFilePath, os.O_CREATE|os.O_RDWR, DefaultFileMode)
 	defer dlfile.Close()
 	if err != nil {
 		logger.Error(err)
@@ -104,7 +105,7 @@ func (r *FtpRequest) Download(localFilePath string) error {
 	buf := make([]byte, 0, capacity)
 	for {
 		if TaskCancel == r.statusCheck() {
-			return TransferError("Download Cancel")
+			return fmt.Errorf("Download Cancel")
 		}
 		m, e := data.Read(buf[len(buf):cap(buf)])
 		buf = buf[0 : len(buf)+m]
@@ -171,7 +172,7 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	buf := make([]byte, 0, capacity)
 	for {
 		if TaskCancel == r.statusCheck() {
-			return nil, TransferError("Download Cancel")
+			return nil, fmt.Errorf("Download Cancel")
 		}
 		m, e := data.Read(buf[len(buf):cap(buf)])
 		buf = buf[0 : len(buf)+m]
@@ -194,7 +195,7 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	return buf, nil
 }
 
-func QuitAllFtpClient() {
+func quitAllFtpClient() {
 	for _, c := range _ftpClientPool {
 		c.lockCmd()
 		c.c.Quit()
@@ -217,12 +218,12 @@ func GetFtpClient(username string, password string, addr string) (*FtpClient, er
 		client.c, err = ftp.Connect(addr)
 		if err != nil {
 			logger.Error(err)
-			return nil, TransferError("Create Ftp Connect Failed")
+			return nil, fmt.Errorf("Create Ftp Connect Failed")
 		}
 		err = client.c.Login(username, password)
 		if err != nil {
 			logger.Error(err)
-			return nil, TransferError("Login Ftp Server Failed")
+			return nil, fmt.Errorf("Login Ftp Server Failed")
 		}
 
 		client.dataLock = sync.Mutex{}
@@ -239,7 +240,7 @@ func (p *FtpClient) Login() {
 	err := p.c.Login(p.username, p.password)
 	if err != nil {
 		logger.Error(err)
-		//return nil, TransferError("Login Ftp Server Failed")
+		//return nil, fmt.Errorf("Login Ftp Server Failed")
 	}
 }
 
@@ -271,7 +272,7 @@ func (p *FtpClient) Download(t *Transfer, ftpPath string) error {
 		logger.Error(err, ftpPath)
 		p.c.Quit()
 		delete(_ftpClientPool, p.key)
-		return TransferError("Download Cancel")
+		return fmt.Errorf("Download Cancel")
 	}
 
 	capacity := t.fileSize + 512
@@ -279,7 +280,7 @@ func (p *FtpClient) Download(t *Transfer, ftpPath string) error {
 	for {
 		//checkTaskStatus will block if status is pause
 		if TaskCancel == t.Status() {
-			return TransferError("Download Cancel")
+			return fmt.Errorf("Download Cancel")
 		}
 		m, e := r.Read(buf[len(buf):cap(buf)])
 		buf = buf[0 : len(buf)+m]
@@ -308,7 +309,7 @@ func (p *FtpClient) Download(t *Transfer, ftpPath string) error {
 
 	r.Close()
 	//write to file
-	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, 0755)
+	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, DefaultFileMode)
 	defer dlfile.Close()
 	if err != nil {
 		logger.Error(err)

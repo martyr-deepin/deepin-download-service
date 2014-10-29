@@ -22,3 +22,5 @@ _testmain.go
 *.exe
 bin/
 misc/test/tmp/
+debian/files
+debian/deepin-download-service*

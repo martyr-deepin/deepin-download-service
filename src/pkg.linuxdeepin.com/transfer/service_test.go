@@ -18,8 +18,8 @@ func TestHttpDownload(t *testing.T) {
 
 	finishChan := make(chan int)
 	service := GetService()
-	service.RegisterProcessReporter(ProgressHandle)
-	service.RegisterFinishReporter(func(id string, retCode int32) {
+	service.CallBack.RegisterProcessReporter(ProgressHandle)
+	service.CallBack.RegisterFinishReporter(func(id string, retCode int32) {
 		switch retCode {
 		case TaskSuccess:
 			t.Log("Download Sucess")
