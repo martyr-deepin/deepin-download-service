@@ -18,8 +18,8 @@ func TestHttpDownload(t *testing.T) {
 
 	finishChan := make(chan int)
 	service := GetService()
-	service.ProcessReport = ProgressHandle
-	service.FinishReport = func(id string, retCode int32) {
+	service.RegisterProcessReporter(ProgressHandle)
+	service.RegisterFinishReporter(func(id string, retCode int32) {
 		switch retCode {
 		case TaskSuccess:
 			t.Log("Download Sucess")
@@ -27,7 +27,7 @@ func TestHttpDownload(t *testing.T) {
 			t.Error("Download Failed")
 		}
 		finishChan <- 0
-	}
+	})
 	service.Download(ts.URL, TmpDir+"/monodevelop.deb", "2ced1290dee1737c6679bc9de71b2086", OnDupOverWrite)
 
 	<-finishChan

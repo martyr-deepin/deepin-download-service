@@ -84,37 +84,70 @@ type Service struct {
 
 	//任务继续时发出
 	Resume func(taskid string)
+
+	cbWait   func(taskid string)
+	cbStart  func(taskid string)
+	cbUpdate func(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, taotalSize int64)
+	cbFinish func(taskid string)
+	cbPause  func(taskid string)
+	cbStop   func(taskid string)
+	cbError  func(taskid string, errcode int32, errstr string)
+	cbResume func(taskid string)
 }
 
 func (s *Service) sendWaitSignal(taskid string) {
+	if nil != s.cbWait {
+		s.cbWait(taskid)
+	}
 	dbus.Emit(s, "Wait", taskid)
 }
 
 func (s *Service) sendStartSignal(taskid string) {
+	if nil != s.cbStart {
+		s.cbStart(taskid)
+	}
 	dbus.Emit(s, "Start", taskid)
 }
 
 func (s *Service) sendPauseSignal(taskid string) {
+	if nil != s.cbPause {
+		s.cbPause(taskid)
+	}
 	dbus.Emit(s, "Pause", taskid)
 }
 
 func (s *Service) sendResumeSignal(taskid string) {
+	if nil != s.cbResume {
+		s.cbResume(taskid)
+	}
 	dbus.Emit(s, "Resume", taskid)
 }
 
 func (s *Service) sendFinishSignal(taskid string) {
+	if nil != s.cbFinish {
+		s.cbFinish(taskid)
+	}
 	dbus.Emit(s, "Finish", taskid)
 }
 
 func (s *Service) sendStopSignal(taskid string) {
+	if nil != s.cbStop {
+		s.cbStop(taskid)
+	}
 	dbus.Emit(s, "Stop", taskid)
 }
 
 func (s *Service) sendUpdateSignal(taskid string, progress int32, speed int32, finish int32, total int32, downloadSize int64, totalSize int64) {
+	if nil != s.cbUpdate {
+		s.cbUpdate(taskid, progress, speed, finish, total, downloadSize, totalSize)
+	}
 	dbus.Emit(s, "Update", taskid, progress, speed, finish, total, downloadSize, totalSize)
 }
 
 func (s *Service) sendErrorSignal(taskid string, errCode int32, errStr string) {
+	if nil != s.cbError {
+		s.cbError(taskid, errCode, errStr)
+	}
 	dbus.Emit(s, "Error", taskid, errCode, errStr)
 }
 
@@ -176,8 +209,8 @@ func (p *Service) updateTaskInfo(timer *time.Timer) {
 func (p *Service) init() {
 	logger.Info("[init] Init Service")
 	transferDBus := GetTransfer()
-	transferDBus.FinishReport = p.onTransferFinish
-	transferDBus.ProcessReport = p.onProcessReport
+	transferDBus.RegisterFinishReporter(p.onTransferFinish)
+	transferDBus.RegisterProcessReporter(p.onProcessReport)
 	p.maxProcess = 6
 	p.maxTask = 1
 	p.tasks = map[string](*Task){}
@@ -188,6 +221,8 @@ func (p *Service) init() {
 	go p.taskDownlowner()
 	go p.startUpdateTaskInfoTimer()
 	go p.downloaderDispatch()
+
+	p.Wait = nil
 }
 
 func (p *Service) onProcessReport(transferID string, detaSize int64, finishSize int64, totalSize int64) {
@@ -277,6 +312,14 @@ func (p *Service) StopTask(taskid string) {
 	p.removeTask(taskid)
 	logger.Infof("[Service] Send task %v Stop signal", taskid)
 	p.sendStopSignal(taskid)
+}
+
+func (p *Service) TotalTaskCount() int64 {
+	return int64(len(p.tasks))
+}
+
+func (p *Service) Exit() {
+	//Do Nothing Now
 }
 
 //StopTask will stop Task and DELETE Task

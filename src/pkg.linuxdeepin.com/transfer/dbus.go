@@ -45,8 +45,7 @@ func LoadDBus() error {
 	defer logger.EndTracing()
 	logger.Info("Start Transfer Service")
 	if !lib.UniqueOnSystem(ServiceDest) {
-		logger.Warning("There already has an Transfer daemon running.")
-		return nil
+		return fmt.Errorf("There already has an Transfer daemon running.")
 	}
 
 	// configure logger

@@ -45,8 +45,7 @@ func LoadDBus() error {
 	logger.Info("deepin-download-service start")
 
 	if !lib.UniqueOnSystem(DBUS_NAME) {
-		logger.Warning("There is aready a deepin-download-service running")
-		return nil
+		return fmt.Errorf("There is aready a deepin-download-service running")
 	}
 	service := GetService()
 	if err := dbus.InstallOnSystem(service); nil != err {

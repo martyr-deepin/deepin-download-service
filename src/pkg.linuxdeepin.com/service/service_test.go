@@ -90,12 +90,11 @@ func TestDownloadMutiErrorTask(t *testing.T) {
 	}
 
 	_mutiTotal = 1
-	service.Update = handleUpdete
-	service.Finish = handleMutiTaskFinish
-	service.Stop = handleMutiTaskStop
-	service.Wait = waitHandle
-	service.Start = waitHandle
-	service.Error = errorHandle
+	service.cbUpdate = handleUpdete
+	service.cbStart = waitHandle
+	service.cbFinish = handleMutiTaskFinish
+	service.cbStop = handleMutiTaskStop
+	service.cbError = errorHandle
 
 	store := TmpDir
 	taskid := service.AddTask("moon", urls, sizes, md5s, store)

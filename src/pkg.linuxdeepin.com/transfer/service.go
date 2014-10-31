@@ -24,29 +24,31 @@ package transfer
 import (
 	"container/list"
 	"errors"
-	"os"
 	"time"
 
 	"pkg.linuxdeepin.com/lib/dbus"
 )
 
 const (
-	DaemonExitTime     = 120 //Second
 	ProgressUpdateTime = 900 //MillSecond
 )
+
+type ProcessReportHandle func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
+type FinishReportHandle func(taskid string, statusCode int32)
 
 type Service struct {
 	//Signal
 	ProcessReport func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
 	FinishReport  func(taskid string, statusCode int32)
 
+	cbProcessReport func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
+	cbFinishReport  func(taskid string, statusCode int32)
+
 	MaxTransferNumber int32
 
 	transfers     map[string]*Transfer
 	workTransfers *list.List
 	waitTransfers *list.List
-
-	daemonTimer *time.Timer
 }
 
 const (
@@ -73,7 +75,6 @@ func GetService() *Service {
 		_server.workTransfers = list.New()
 		_server.MaxTransferNumber = 32
 		go _server.startProgressReportTimer()
-		go _server.startDaemon()
 	}
 	return _server
 }
@@ -88,17 +89,24 @@ const (
 )
 
 //transfer is both lib and dbus, it deal with callback and dbus signal
+func (s *Service) RegisterProcessReporter(f ProcessReportHandle) {
+	s.cbProcessReport = f
+}
+
+func (s *Service) RegisterFinishReporter(f FinishReportHandle) {
+	s.cbFinishReport = f
+}
 
 func (s *Service) sendProcessReportSignal(taskid string, detaBytes int64, finishBytes int64, totalBytes int64) {
-	if nil != s.ProcessReport {
-		s.ProcessReport(taskid, detaBytes, finishBytes, totalBytes)
+	if nil != s.cbProcessReport {
+		s.cbProcessReport(taskid, detaBytes, finishBytes, totalBytes)
 	}
 	dbus.Emit(s, "ProcessReport", taskid, detaBytes, finishBytes, totalBytes)
 }
 
 func (s *Service) sendFinishReportSignal(taskid string, statusCode int32) {
-	if nil != s.FinishReport {
-		s.FinishReport(taskid, statusCode)
+	if nil != s.cbFinishReport {
+		s.cbFinishReport(taskid, statusCode)
 	}
 	dbus.Emit(s, "FinishReport", taskid, statusCode)
 
@@ -165,6 +173,16 @@ func (s *Service) QuerySize(url string) int64 {
 		return 0
 	}
 	return size
+}
+
+//task manager
+
+func (s *Service) TotalTaskCount() int64 {
+	return int64(len(s.transfers))
+}
+
+func (s *Service) Exit() {
+	QuitAllFtpClient()
 }
 
 func (s *Service) getTask(url string, localfile string) *Transfer {
@@ -254,20 +272,6 @@ func (s *Service) download(t *Transfer) {
 		t.status = TaskFailed
 	} else {
 		t.status = TaskSuccess
-	}
-}
-
-func (s *Service) startDaemon() {
-	s.daemonTimer = time.NewTimer(DaemonExitTime * time.Second)
-	for {
-		select {
-		case <-s.daemonTimer.C:
-			if 0 == len(s.transfers) {
-				QuitAllFtpClient()
-				os.Exit(0)
-			}
-			s.daemonTimer.Reset(DaemonExitTime * time.Second)
-		}
 	}
 }
 

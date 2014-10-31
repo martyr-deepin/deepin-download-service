@@ -23,28 +23,58 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"pkg.linuxdeepin.com/lib/dbus"
+	dlogger "pkg.linuxdeepin.com/lib/log"
 	"pkg.linuxdeepin.com/service"
 	"pkg.linuxdeepin.com/transfer"
 )
 
+const (
+	DaemonExitTime = 60 //Second
+)
+
+var logger = dlogger.NewLogger("dde-api/transfer/daemon")
+
 func main() {
 	err := transfer.LoadDBus()
 	if nil != err {
+		logger.Error(err)
 		os.Exit(1)
 	}
 
 	err = service.LoadDBus()
 	if nil != err {
+		logger.Error(err)
 		os.Exit(1)
 	}
+
+	go startDaemon()
 
 	dbus.DealWithUnhandledMessage()
 
 	if err := dbus.Wait(); nil != err {
+		logger.Error(err)
 		os.Exit(1)
 	}
 
 	os.Exit(0)
+}
+
+var daemonTimer *time.Timer
+
+func startDaemon() {
+	daemonTimer = time.NewTimer(DaemonExitTime * time.Second)
+	for {
+		select {
+		case <-daemonTimer.C:
+			if (transfer.GetService().TotalTaskCount() == 0) && (service.GetService().TotalTaskCount() == 0) {
+				transfer.GetService().Exit()
+				service.GetService().Exit()
+				os.Exit(0)
+			}
+			daemonTimer.Reset(DaemonExitTime * time.Second)
+		}
+	}
 }
