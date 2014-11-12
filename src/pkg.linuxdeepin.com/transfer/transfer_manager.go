@@ -36,9 +36,9 @@ const (
 )
 
 const (
-	ServiceDest = "com.deepin.api.Transfer"
-	ServicePath = "/com/deepin/api/Transfer"
-	ServiceIfc  = "com.deepin.api.Transfer"
+	TransferManagerDest = "com.deepin.api.Transfer"
+	TransferManagerPath = "/com/deepin/api/Transfer"
+	TransferManagerIfc  = "com.deepin.api.Transfer"
 )
 
 type ProcessReporter func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
@@ -49,7 +49,7 @@ type Reporter struct {
 	finishReportCallBack  FinishReporter
 }
 
-type Service struct {
+type TransferManager struct {
 	//Signal
 	ProcessReport func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
 	FinishReport  func(taskid string, statusCode int32)
@@ -66,11 +66,11 @@ type Service struct {
 	waitlistLock sync.Mutex
 }
 
-var _server *Service
+var _server *TransferManager
 
-func GetService() *Service {
+func GetTransferManager() *TransferManager {
 	if nil == _server {
-		_server = &Service{}
+		_server = &TransferManager{}
 		_server.transfers = map[string]*Transfer{}
 		_server.waitTransfers = list.New()
 		_server.workTransfers = list.New()
@@ -95,29 +95,29 @@ func (r *Reporter) RegisterFinishReporter(f FinishReporter) {
 	r.finishReportCallBack = f
 }
 
-func (s *Service) sendProcessReportSignal(taskid string, detaBytes int64, finishBytes int64, totalBytes int64) {
+func (s *TransferManager) sendProcessReportSignal(taskid string, detaBytes int64, finishBytes int64, totalBytes int64) {
 	if nil != s.CallBack.processReportCallBack {
 		s.CallBack.processReportCallBack(taskid, detaBytes, finishBytes, totalBytes)
 	}
 	dbus.Emit(s, "ProcessReport", taskid, detaBytes, finishBytes, totalBytes)
 }
 
-func (s *Service) sendFinishReportSignal(taskid string, statusCode int32) {
+func (s *TransferManager) sendFinishReportSignal(taskid string, statusCode int32) {
 	if nil != s.CallBack.finishReportCallBack {
 		s.CallBack.finishReportCallBack(taskid, statusCode)
 	}
 	dbus.Emit(s, "FinishReport", taskid, statusCode)
 }
 
-func (s *Service) GetDBusInfo() dbus.DBusInfo {
+func (s *TransferManager) GetDBusInfo() dbus.DBusInfo {
 	return dbus.DBusInfo{
-		ServiceDest,
-		ServicePath,
-		ServiceIfc,
+		TransferManagerDest,
+		TransferManagerPath,
+		TransferManagerIfc,
 	}
 }
 
-func (s *Service) Download(url string, localFile string, md5 string, ondup int32) (retCode int32, taskid string) {
+func (s *TransferManager) Download(url string, localFile string, md5 string, ondup int32) (retCode int32, taskid string) {
 	t := s.getTask(url, localFile)
 	if nil != t {
 		logger.Warningf("Task Exist, Stop Add this Task: %v", localFile)
@@ -132,7 +132,7 @@ func (s *Service) Download(url string, localFile string, md5 string, ondup int32
 	return ActionSuccess, t.ID
 }
 
-func (s *Service) Resume(taskid string) int32 {
+func (s *TransferManager) Resume(taskid string) int32 {
 	logger.Info("Resume", taskid)
 	task := s.transfers[taskid]
 	if task != nil {
@@ -142,7 +142,7 @@ func (s *Service) Resume(taskid string) int32 {
 	return ActionFailed
 }
 
-func (s *Service) Pause(taskid string) int32 {
+func (s *TransferManager) Pause(taskid string) int32 {
 	logger.Info("Pause", taskid)
 	task := s.transfers[taskid]
 	if task != nil {
@@ -152,7 +152,7 @@ func (s *Service) Pause(taskid string) int32 {
 	return ActionFailed
 }
 
-func (s *Service) Cancel(taskid string) int32 {
+func (s *TransferManager) Cancel(taskid string) int32 {
 	logger.Warning("Cancel", taskid)
 	task := s.transfers[taskid]
 	delete(s.transfers, taskid)
@@ -164,11 +164,11 @@ func (s *Service) Cancel(taskid string) int32 {
 	return ActionFailed
 }
 
-func (s *Service) Close() {
+func (s *TransferManager) Close() {
 	quitAllFtpClient()
 }
 
-func (s *Service) QuerySize(url string) int64 {
+func (s *TransferManager) QuerySize(url string) int64 {
 	size, err := s.remoteFileSize(url)
 	if nil != err {
 		return 0
@@ -178,11 +178,11 @@ func (s *Service) QuerySize(url string) int64 {
 
 //task manager
 
-func (s *Service) TransferCount() int32 {
+func (s *TransferManager) TransferCount() int32 {
 	return int32(len(s.transfers))
 }
 
-func (s *Service) ListTransfer() []string {
+func (s *TransferManager) ListTransfer() []string {
 	var transferlist []string
 	for _, v := range s.transfers {
 		transferlist = append(transferlist, v.ID)
@@ -191,11 +191,11 @@ func (s *Service) ListTransfer() []string {
 }
 
 //DumpTransfer is for debug
-func (s *Service) GetTransfer(taskid string) string {
+func (s *TransferManager) GetTransfer(taskid string) string {
 	return fmt.Sprintf("%v", s.transfers[taskid])
 }
 
-func (s *Service) getTask(url string, localfile string) *Transfer {
+func (s *TransferManager) getTask(url string, localfile string) *Transfer {
 	for _, task := range s.transfers {
 		if (task.url == url) && (task.localFile == localfile) {
 			return task
@@ -204,7 +204,7 @@ func (s *Service) getTask(url string, localfile string) *Transfer {
 	return nil
 }
 
-func (s *Service) remoteFileSize(url string) (int64, error) {
+func (s *TransferManager) remoteFileSize(url string) (int64, error) {
 	client, err := GetClient(url)
 
 	if err != nil {
@@ -221,7 +221,7 @@ func (s *Service) remoteFileSize(url string) (int64, error) {
 	return size, nil
 }
 
-func (s *Service) startTask(t *Transfer) {
+func (s *TransferManager) startTask(t *Transfer) {
 	s.worklistLock.Lock()
 	defer s.worklistLock.Unlock()
 	s.waitlistLock.Lock()
@@ -234,7 +234,7 @@ func (s *Service) startTask(t *Transfer) {
 	}
 }
 
-func (s *Service) finishTask(t *Transfer) {
+func (s *TransferManager) finishTask(t *Transfer) {
 	s.worklistLock.Lock()
 	defer s.worklistLock.Unlock()
 	s.waitlistLock.Lock()
@@ -260,8 +260,8 @@ func (s *Service) finishTask(t *Transfer) {
 	}
 }
 
-func (s *Service) download(t *Transfer) {
-	logger.Infof("Start Download %v url: %v", t.ID, t.url)
+func (s *TransferManager) download(t *Transfer) {
+	logger.Infof("Download %v", t.ID)
 	defer s.finishTask(t)
 
 	err := t.Download()
@@ -273,7 +273,7 @@ func (s *Service) download(t *Transfer) {
 	}
 }
 
-func (s *Service) startProgressReportTimer() {
+func (s *TransferManager) startProgressReportTimer() {
 	timer := time.NewTimer(ProgressUpdateTime * time.Millisecond)
 	for {
 		select {
@@ -284,7 +284,7 @@ func (s *Service) startProgressReportTimer() {
 	}
 }
 
-func (s *Service) handleProgressReport() {
+func (s *TransferManager) handleProgressReport() {
 	for element := s.workTransfers.Front(); element != nil; element = element.Next() {
 		if t, ok := element.Value.(*Transfer); ok {
 			//logger.Warning("Report Progress of", task.ID, " size ", task.detaSize)

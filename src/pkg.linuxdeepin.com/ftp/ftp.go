@@ -25,7 +25,10 @@ const (
 // ServerConn represents the connection to a remote FTP server.
 type ServerConn struct {
 	conn     *textproto.Conn
+	network  string
 	host     string
+	ip       string
+	addr     string
 	features map[string]string
 }
 
@@ -47,7 +50,7 @@ type response struct {
 //
 // It is generally followed by a call to Login() as most FTP commands require
 // an authenticated user.
-func Connect(addr string) (*ServerConn, error) {
+func ConnectNetwork(network string, addr string) (*ServerConn, error) {
 	conn, err := textproto.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
@@ -56,7 +59,10 @@ func Connect(addr string) (*ServerConn, error) {
 	a := strings.SplitN(addr, ":", 2)
 	c := &ServerConn{
 		conn:     conn,
+		network:  network,
 		host:     a[0],
+		ip:       a[0],
+		addr:     addr,
 		features: make(map[string]string),
 	}
 
@@ -73,6 +79,37 @@ func Connect(addr string) (*ServerConn, error) {
 	}
 
 	return c, nil
+}
+
+func Connect(addr string) (*ServerConn, error) {
+	a := strings.SplitN(addr, ":", 2)
+	if len(a) < 1 {
+		return nil, fmt.Errorf("Empty Addr")
+	}
+	if len(a) < 2 {
+		a = append(a, "21")
+	}
+	iplist, err := net.LookupIP(a[0])
+	ipv4list := []net.IP{}
+	for _, v := range iplist {
+		if nil != v.To4() {
+			ipv4list = append(ipv4list, v)
+		}
+	}
+	host := a[0]
+	if 0 != len(ipv4list) {
+		host = ipv4list[0].String()
+	}
+	c, err := ConnectNetwork("tcp4", host+":"+a[1])
+	if nil == err {
+		c.ip = ipv4list[0].String()
+		return c, nil
+	}
+	c, err = ConnectNetwork("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return c, err
 }
 
 // Login authenticates the client with specified user and password.
@@ -216,9 +253,10 @@ func (c *ServerConn) openDataConn() (net.Conn, error) {
 	}
 
 	// Build the new net address string
-	addr := fmt.Sprintf("%s:%d", c.host, port)
+	addr := fmt.Sprintf("%s:%d", c.ip, port)
 
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.Dial(c.network, addr)
+
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +289,7 @@ func (c *ServerConn) cmdDataConn(format string, args ...interface{}) (net.Conn, 
 		return nil, err
 	}
 
-	code, msg, err := c.conn.ReadCodeLine(-1)
+	code, msg, err := c.conn.ReadResponse(-1)
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -505,6 +543,7 @@ func (c *ServerConn) Quit() error {
 
 // Read implements the io.Reader interface on a FTP data connection.
 func (r *response) Read(buf []byte) (int, error) {
+	r.conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 	n, err := r.conn.Read(buf)
 	return n, err
 }

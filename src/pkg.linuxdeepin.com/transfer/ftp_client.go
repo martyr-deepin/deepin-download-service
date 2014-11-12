@@ -24,9 +24,11 @@ type FtpClient struct {
 	supportRange bool
 	username     string
 	password     string
+	addr         string
 	key          string
 	c            *ftp.ServerConn
 
+	err      error
 	dataLock sync.Mutex
 	cmdLock  sync.Mutex
 }
@@ -71,7 +73,7 @@ func (r *FtpRequest) QuerySize() (int64, error) {
 }
 
 func (r *FtpRequest) Download(localFilePath string) error {
-	logger.Infof("[Download] %v", localFilePath)
+	logger.Infof("Download %v", localFilePath)
 
 	var err error
 	r.client.lockData()
@@ -79,27 +81,24 @@ func (r *FtpRequest) Download(localFilePath string) error {
 	r.client.lockCmd()
 	defer r.client.unlockCmd()
 
-	defer func() {
-		if nil != err {
-			logger.Warning("Login(err)")
-			r.client.Login()
-		}
-	}()
+	defer r.client.ErrorRecover()
 
 	dlfile, err := os.OpenFile(localFilePath, os.O_CREATE|os.O_RDWR, DefaultFileMode)
 	defer dlfile.Close()
 	if err != nil {
-		logger.Error(err)
+		logger.Error("OpenFile %v Failed: %v", localFilePath, err)
 		return err
 	}
 
 	data, err := r.client.c.Retr(r.remotePath)
 	if err != nil {
-		logger.Error(err, r.remotePath)
-		return err
+		r.client.err = fmt.Errorf("Retr %v Failed: %v", r.remotePath, err)
+		logger.Error(r.client.err)
+		return r.client.err
 	}
 	defer data.Close()
 
+	logger.Info("Try to Read Data of ", r.url)
 	capacity := CacheSize
 	writtenBytes := int64(0)
 	buf := make([]byte, 0, capacity)
@@ -125,20 +124,20 @@ func (r *FtpRequest) Download(localFilePath string) error {
 		if e == io.EOF {
 			dlfile.WriteAt(buf, writtenBytes)
 			dlfile.Sync()
-			logger.Warning("Read Buffer End with", e)
+			logger.Info("Read Buffer End with", e)
 			break
 		}
 		if nil != e {
-			logger.Error("Ftp Download Error: ", e)
-			time.Sleep(ErrorRetryWaitTime * time.Millisecond)
-			break
+			r.client.err = fmt.Errorf("Read Ftp Data Failed: %v", e)
+			logger.Error(r.client.err)
+			return r.client.err
 		}
 	}
 	return nil
 }
 
 func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
-	logger.Infof("[DownloadRange] %v-%v", begin, end)
+	logger.Infof("DownloadRange %v-%v", begin, end)
 
 	var err error
 	r.client.lockData()
@@ -146,33 +145,34 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	r.client.lockCmd()
 	defer r.client.unlockCmd()
 
-	defer func() {
-		if nil != err {
-			logger.Warning("Login(err)")
-			r.client.Login()
-		}
-	}()
+	defer r.client.ErrorRecover()
 
 	if 0 != begin {
-		logger.Warning(begin, "Rest to")
+		logger.Infof("Rest to %v", begin)
 		err = r.client.c.Rest(begin)
 		if nil != err {
-			logger.Error(err)
-			return nil, err
+			r.client.err = fmt.Errorf("Reset %v Failed: %v", r.url, err)
+			logger.Error(r.client.err)
+			return nil, r.client.err
 		}
+	} else {
+		logger.Infof("Download From %v", begin)
 	}
+
 	data, err := r.client.c.Retr(r.remotePath)
 	if err != nil {
-		logger.Error(err, r.remotePath)
-		return nil, err
+		r.client.err = fmt.Errorf("Retr %v Failed: %v", r.url, err)
+		logger.Error(r.client.err)
+		return nil, r.client.err
 	}
-	data.Close()
+	defer data.Close()
 
+	logger.Info("Try to Read Data of ", r.url)
 	capacity := end - begin
 	buf := make([]byte, 0, capacity)
 	for {
 		if TaskCancel == r.statusCheck() {
-			return nil, fmt.Errorf("Download Cancel")
+			return nil, fmt.Errorf("Cancel Download: %v ", r.url)
 		}
 		m, e := data.Read(buf[len(buf):cap(buf)])
 		buf = buf[0 : len(buf)+m]
@@ -182,13 +182,13 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 		}
 
 		if e == io.EOF {
-			logger.Warning(e)
+			logger.Info("Download Read Buffer End with", e)
 			break
 		}
 		if nil != e {
-			logger.Info("Read e: ", e)
-			time.Sleep(ErrorRetryWaitTime * time.Millisecond)
-			return nil, e
+			r.client.err = fmt.Errorf("Download %v Error: %v", r.url, e)
+			logger.Error(r.client.err)
+			return nil, r.client.err
 		}
 	}
 
@@ -204,7 +204,14 @@ func quitAllFtpClient() {
 	_ftpClientPool = map[string](*FtpClient){}
 }
 
+var _clientLock sync.Mutex
+
 func GetFtpClient(username string, password string, addr string) (*FtpClient, error) {
+	logger.Infof("Lock GetFtpClient of %v", addr)
+	_clientLock.Lock()
+	defer _clientLock.Unlock()
+	defer logger.Infof("Unlock GetFtpClient of %v", addr)
+
 	var err error
 	if !strings.Contains(addr, ":") {
 		addr = addr + ":21"
@@ -215,15 +222,20 @@ func GetFtpClient(username string, password string, addr string) (*FtpClient, er
 		client = &FtpClient{}
 		client.username = username
 		client.password = password
+		client.addr = addr
+
+		defer client.ErrorRecover()
 		client.c, err = ftp.Connect(addr)
 		if err != nil {
-			logger.Error(err)
-			return nil, fmt.Errorf("Create Ftp Connect Failed")
+			client.err = fmt.Errorf("Create Ftp Connect Failed: %v", err)
+			logger.Error(client.err)
+			return nil, client.err
 		}
 		err = client.c.Login(username, password)
 		if err != nil {
-			logger.Error(err)
-			return nil, fmt.Errorf("Login Ftp Server Failed")
+			client.err = fmt.Errorf("Login Ftp Server Failed: %v", err)
+			logger.Error(client.err)
+			return nil, client.err
 		}
 
 		client.dataLock = sync.Mutex{}
@@ -235,13 +247,47 @@ func GetFtpClient(username string, password string, addr string) (*FtpClient, er
 	return client, nil
 }
 
-func (p *FtpClient) Login() {
+func (p *FtpClient) Login() error {
 	//		p.c.Logout()
 	err := p.c.Login(p.username, p.password)
 	if err != nil {
 		logger.Error(err)
-		//return nil, fmt.Errorf("Login Ftp Server Failed")
+		return fmt.Errorf("Login Ftp Server Failed")
 	}
+	return nil
+}
+
+func (p *FtpClient) ErrorRecover() {
+	if nil == p.err {
+		return
+	}
+	p.err = nil
+	p.Reset()
+}
+
+func (p *FtpClient) Reset() error {
+	var err error
+	if nil != p.c {
+		p.c.Logout()
+		p.c.Quit()
+	}
+	logger.Warningf("Reset FtpClient, Wait 10s...")
+	time.Sleep(10 * time.Second)
+
+	p.c, err = ftp.Connect(p.addr)
+	if err != nil {
+		err = fmt.Errorf("Connect to %v Failed: %v", p.addr, err)
+		logger.Error(err)
+		return err
+	}
+
+	err = p.c.Login(p.username, p.password)
+	if err != nil {
+		err = fmt.Errorf("Login Ftp Server Failed: %v", err)
+		logger.Error(err)
+		return err
+	}
+	return nil
 }
 
 func (p *FtpClient) lockCmd() {
@@ -261,63 +307,6 @@ func (p *FtpClient) lockData() {
 func (p *FtpClient) unlockData() {
 	logger.Warning("Unlock Data")
 	p.dataLock.Unlock()
-}
-
-func (p *FtpClient) Download(t *Transfer, ftpPath string) error {
-	p.lockData()
-	defer p.unlockData()
-
-	r, err := p.c.Retr(ftpPath)
-	if err != nil {
-		logger.Error(err, ftpPath)
-		p.c.Quit()
-		delete(_ftpClientPool, p.key)
-		return fmt.Errorf("Download Cancel")
-	}
-
-	capacity := t.fileSize + 512
-	buf := make([]byte, 0, capacity*2)
-	for {
-		//checkTaskStatus will block if status is pause
-		if TaskCancel == t.Status() {
-			return fmt.Errorf("Download Cancel")
-		}
-		m, e := r.Read(buf[len(buf):cap(buf)])
-		buf = buf[0 : len(buf)+m]
-		if len(buf) == cap(buf) {
-			newBuf := make([]byte, cap(buf)*2)
-			copy(newBuf, buf[:len(buf)])
-			buf = newBuf[:len(buf)]
-			//logger.Warning("extern", cap(buf), buf)
-		}
-		t.detaSize += int64(m)
-		t.downloadSize = 0 + int64(len(buf))
-		t.totalSize = t.fileSize
-		GetService().sendProcessReportSignal(t.ID, int64(m), int64(len(buf)), t.fileSize)
-
-		if e == io.EOF {
-			logger.Warning(e)
-			//logger.Info("Read io.EOF: ", len(buf))
-			break
-		}
-		if e != nil {
-			time.Sleep(4 * time.Millisecond)
-			logger.Info("Read e: ", e)
-			break
-		}
-	}
-
-	r.Close()
-	//write to file
-	dlfile, err := os.OpenFile(t.localFile, os.O_CREATE|os.O_RDWR, DefaultFileMode)
-	defer dlfile.Close()
-	if err != nil {
-		logger.Error(err)
-		return err
-	}
-	dlfile.Write(buf)
-	dlfile.Sync()
-	return nil
 }
 
 var _ftpClientPool map[string](*FtpClient)

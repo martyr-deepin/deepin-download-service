@@ -89,12 +89,11 @@ func NewTransfer(url string, localFile string, md5 string, ondup int32) (*Transf
 	t.localFile = localFile
 	t.status = TaskStart
 	t.ondup = ondup
-	logger.Warningf("[NewTransfer] ID: %v localFile: %v", t.ID, localFile)
+	logger.Warningf("[NewTransfer] ID: %v\n\turl: %v", t.ID, url)
 	return t, nil
 }
 
 func (t *Transfer) Download() error {
-	logger.Info("Start Download url: ", t.url)
 	t.status = TaskStart
 	var err error
 	retryTime := 0
@@ -105,7 +104,7 @@ func (t *Transfer) Download() error {
 		retryInterval = 500 * time.Duration(retryTime*retryTime) * time.Millisecond
 
 		logger.Infof("Try Download %v %v time, Retry Interval: %v", t.ID, retryTime, retryInterval)
-		t.fileSize, err = GetService().remoteFileSize(t.url)
+		t.fileSize, err = GetTransferManager().remoteFileSize(t.url)
 		if err != nil {
 			logger.Errorf("Try Download %v\n\t[%v/%v] Failed: %v", t.ID, retryTime, downloadRetryTime, err)
 			continue
