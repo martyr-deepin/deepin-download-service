@@ -9,8 +9,15 @@ FTP_SRC =$(CURDIR)/src/pkg.linuxdeepin.com/transfer
 SERVICE_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/service
 DDAEMON_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/daemon
 
+ifndef USE_GCCGO
+    GOBUILD = go build
+else
+    LDFLAGS = $(shell pkg-config --libs gio-2.0)
+    GOBUILD = go build -compiler gccgo -gccgoflags "${LDFLAGS}"
+endif
+
 build:
-	cd $(DDAEMON_SRC)  && GOPATH=$(FIXGOPATH) go build -o $(BIN_PATH)/deepin-download-service
+	cd $(DDAEMON_SRC)  && GOPATH=$(FIXGOPATH) ${GOBUILD} -o $(BIN_PATH)/deepin-download-service
 
 test:
 	cd $(TRANSFER_SRC) && GOPATH=$(FIXGOPATH) go test -v
