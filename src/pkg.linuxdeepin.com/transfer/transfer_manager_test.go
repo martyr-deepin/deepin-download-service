@@ -17,7 +17,7 @@ func TestHttpDownload(t *testing.T) {
 	defer ts.Close()
 
 	finishChan := make(chan int)
-	service := GetService()
+	service := GetTransferManager()
 	service.CallBack.RegisterProcessReporter(ProgressHandle)
 	service.CallBack.RegisterFinishReporter(func(id string, retCode int32) {
 		switch retCode {

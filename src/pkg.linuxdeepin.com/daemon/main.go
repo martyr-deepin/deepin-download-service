@@ -69,8 +69,8 @@ func startDaemon() {
 	for {
 		select {
 		case <-daemonTimer.C:
-			if (transfer.GetService().TransferCount() == 0) && (service.GetService().TaskCount() == 0) {
-				transfer.GetService().Close()
+			if (transfer.GetTransferManager().TransferCount() == 0) && (service.GetService().TaskCount() == 0) {
+				transfer.GetTransferManager().Close()
 				service.GetService().Close()
 				os.Exit(0)
 			}
