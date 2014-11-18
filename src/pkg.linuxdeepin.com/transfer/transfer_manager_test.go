@@ -28,7 +28,7 @@ func TestHttpDownload(t *testing.T) {
 		}
 		finishChan <- 0
 	})
-	service.Download(ts.URL, TmpDir+"/monodevelop.deb", "2ced1290dee1737c6679bc9de71b2086", OnDupOverWrite)
+	service.Lib.Download(ts.URL, TmpDir+"/monodevelop.deb", "2ced1290dee1737c6679bc9de71b2086", OnDupOverWrite)
 
 	<-finishChan
 }

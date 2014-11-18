@@ -97,7 +97,7 @@ func TestDownloadMutiErrorTask(t *testing.T) {
 	service.cbError = errorHandle
 
 	store := TmpDir
-	taskid := service.AddTask("moon", urls, sizes, md5s, store)
+	taskid := service.addTask("moon", urls, sizes, md5s, store)
 	if "" == taskid {
 		t.Error("add task failed")
 	}

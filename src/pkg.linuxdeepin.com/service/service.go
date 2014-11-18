@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"pkg.linuxdeepin.com/lib/dbus"
+	transfer "pkg.linuxdeepin.com/transfer"
 )
 
 const (
@@ -260,7 +261,15 @@ func (p *Service) onTransferFinish(transferID string, retCode int32) {
 //AddTask will add download task to transfer queue and return
 //Task is list of debian packages
 //pkg is mean single debian package
-func (p *Service) AddTask(taskName string, urls []string, sizes []int64, md5s []string, storeDir string) (taskid string) {
+func (p *Service) AddTask(dbusMsg dbus.DMessage, taskName string, urls []string, sizes []int64, md5s []string, storeDir string) (taskid string) {
+	//verfify permission here
+	if nil != transfer.PermissionVerfiy(dbusMsg.GetSenderPID(), storeDir) {
+		return ""
+	}
+	return p.addTask(taskName, urls, sizes, md5s, storeDir)
+}
+
+func (p *Service) addTask(taskName string, urls []string, sizes []int64, md5s []string, storeDir string) (taskid string) {
 	logger.Infof("[AddTask] %v", taskName)
 	task := NewTask(taskName, urls, sizes, md5s, storeDir)
 	if nil == task {

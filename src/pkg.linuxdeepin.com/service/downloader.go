@@ -25,6 +25,10 @@ const (
 	ActionFailed  = int32(1)
 )
 
+type Authorization struct {
+	Pid uint32
+}
+
 type Downloader struct {
 	ID           string
 	status       int32
@@ -131,7 +135,7 @@ func (p *Downloader) Start() error {
 
 	transfer := GetTransfer()
 
-	result, transferID := transfer.Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
+	result, transferID := transfer.Lib.Download(p.url, p.storeDir+"/"+p.fileName, p.md5, OnDupOverWrite)
 	if result != ActionSuccess {
 		ret := fmt.Sprintf("Start Transfer Error: Result: %v Error: %v", result)
 		return DownloadError(ret)

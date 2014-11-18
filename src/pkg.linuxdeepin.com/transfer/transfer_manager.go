@@ -49,12 +49,17 @@ type Reporter struct {
 	finishReportCallBack  FinishReporter
 }
 
+type TransferManagerLib struct {
+	s *TransferManager
+}
+
 type TransferManager struct {
+	CallBack Reporter           `dbus:"-"`
+	Lib      TransferManagerLib `dbus:"-"`
+
 	//Signal
 	ProcessReport func(taskid string, detaBytes int64, finishBytes int64, totalBytes int64)
 	FinishReport  func(taskid string, statusCode int32)
-
-	CallBack Reporter `dbus:"-"`
 
 	MaxTransferNumber int32
 
@@ -75,6 +80,7 @@ func GetTransferManager() *TransferManager {
 		_server.waitTransfers = list.New()
 		_server.workTransfers = list.New()
 		_server.MaxTransferNumber = 32
+		_server.Lib.s = _server
 		go _server.startProgressReportTimer()
 	}
 	return _server
@@ -117,17 +123,26 @@ func (s *TransferManager) GetDBusInfo() dbus.DBusInfo {
 	}
 }
 
-func (s *TransferManager) Download(url string, localFile string, md5 string, ondup int32) (retCode int32, taskid string) {
-	t := s.getTask(url, localFile)
+func (s *TransferManager) Download(dbusMsg dbus.DMessage, url string, localfile string, md5 string, ondup int32) (retCode int32, taskid string) {
+	fmt.Println(dbusMsg, localfile)
+	if nil != PermissionVerfiy(dbusMsg.GetSenderPID(), localfile) {
+		return ActionFailed, ""
+	}
+
+	return s.Lib.Download(url, localfile, md5, ondup)
+}
+
+func (sl *TransferManagerLib) Download(url string, localfile string, md5 string, ondup int32) (retCode int32, taskid string) {
+	t := sl.s.getTask(url, localfile)
 	if nil != t {
-		logger.Warningf("Task Exist, Stop Add this Task: %v", localFile)
+		logger.Warningf("Task Exist, Stop Add this Task: %v", localfile)
 		return ActionSuccess, t.ID
 	}
 
-	logger.Warningf("Add Task:\n\tUrl: %v\n\tFile: %v\n\tMD5: %v\n\tOverwrite: %v", url, localFile, md5, ondup)
-	t, _ = NewTransfer(url, localFile, md5, ondup)
-	s.transfers[t.ID] = t
-	go s.startTask(t)
+	logger.Warningf("Add Task:\n\tUrl: %v\n\tFile: %v\n\tMD5: %v\n\tOverwrite: %v", url, localfile, md5, ondup)
+	t, _ = NewTransfer(url, localfile, md5, ondup)
+	sl.s.transfers[t.ID] = t
+	go sl.s.startTask(t)
 
 	return ActionSuccess, t.ID
 }

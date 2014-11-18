@@ -7,9 +7,6 @@ cd $start_path
 
 sudo cp $shell_path/../../src/pkg.linuxdeepin.com/transfer/dbus/com.deepin.api.Transfer.service  /usr/share/dbus-1/system-services/
 sudo cp $shell_path/../../src/pkg.linuxdeepin.com/transfer/dbus/com.deepin.api.Transfer.conf /etc/dbus-1/system.d/
-sudo cp $shell_path/../../bin/transfer /usr/lib/deepin-api/transfer
-sudo killall transfer
-sudo $shell_path/../../bin/transfer &
 sudo killall deepin-download-service
 sudo $shell_path/../../bin/deepin-download-service &
 
