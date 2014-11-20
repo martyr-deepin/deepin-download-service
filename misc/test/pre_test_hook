@@ -18,7 +18,7 @@ mkdir -p $shell_path/tmp/public
 echo "Hello, Welcome to test fpt server!" | tee $shell_path/tmp/public/test
 sudo chown root: $shell_path/ftp/vsftpd.conf
 
-sh -c "sleep 30; sudo killall vsftpd" &
+sh -c "sleep 120; sudo killall vsftpd" &
 sudo vsftpd $shell_path/ftp/vsftpd.conf -oanon_root=$shell_path/tmp/ &
 
 exit 0

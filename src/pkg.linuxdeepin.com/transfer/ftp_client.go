@@ -42,10 +42,19 @@ func (p *FtpClient) QuerySize(url string) (int64, error) {
 	p.lockCmd()
 	defer p.unlockCmd()
 
+	defer p.ErrorRecover()
+
 	remotePath := strings.Replace(url, "ftp://", "", -1)
 	remotePath = remotePath[len(strings.Split(remotePath, "/")[0])+1 : len(remotePath)]
 
-	return p.c.Size(remotePath)
+	if nil == p.c {
+		err := fmt.Errorf("nil Ftp Connect")
+		p.err = err
+		return 0, err
+	}
+	size, err := p.c.Size(remotePath)
+	p.err = err
+	return size, err
 }
 
 func (p *FtpClient) NewRequest(url string) (Request, error) {
@@ -87,6 +96,12 @@ func (r *FtpRequest) Download(localFilePath string) error {
 	defer dlfile.Close()
 	if err != nil {
 		logger.Error("OpenFile %v Failed: %v", localFilePath, err)
+		return err
+	}
+
+	if nil == r.client.c {
+		err := fmt.Errorf("nil Ftp Connect")
+		r.client.err = err
 		return err
 	}
 
@@ -146,6 +161,12 @@ func (r *FtpRequest) DownloadRange(begin int64, end int64) ([]byte, error) {
 	defer r.client.unlockCmd()
 
 	defer r.client.ErrorRecover()
+
+	if nil == r.client.c {
+		err := fmt.Errorf("nil Ftp Connect")
+		r.client.err = err
+		return nil, err
+	}
 
 	if 0 != begin {
 		logger.Infof("Rest to %v", begin)
@@ -287,6 +308,7 @@ func (p *FtpClient) Reset() error {
 		logger.Error(err)
 		return err
 	}
+	fmt.Println("Reset Success", p.c)
 	return nil
 }
 
