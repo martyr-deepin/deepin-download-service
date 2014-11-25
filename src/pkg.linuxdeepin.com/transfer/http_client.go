@@ -16,7 +16,8 @@ const (
 )
 
 type HttpClient struct {
-	client http.Client
+	client       http.Client
+	supportRange bool
 }
 
 var _httpClientPool map[string](*HttpClient)
@@ -31,6 +32,8 @@ func GetHttpClient(url string) (*HttpClient, error) {
 	if nil == client {
 		client = &HttpClient{}
 		client.client = http.Client{}
+		client.supportRange = true
+		_httpClientPool[host] = client
 	}
 	return client, nil
 }
@@ -90,8 +93,10 @@ func (hr *HttpRequest) Download(localFilePath string) error {
 			}
 
 			if e == io.EOF {
+				dlfile.WriteAt(buf, writtenBytes)
+				dlfile.Sync()
 				logger.Info("Download Read Buffer End with", e)
-				break
+				return nil
 			}
 			if nil != e {
 				logger.Errorf("Download %v Error: %v", hr.url, e)
@@ -164,7 +169,7 @@ func (p *HttpClient) NewRequest(url string) (Request, error) {
 }
 
 func (p *HttpClient) SupportRange() bool {
-	return true
+	return p.supportRange
 }
 
 func (p *HttpClient) QuerySize(url string) (int64, error) {
@@ -184,7 +189,8 @@ func (p *HttpClient) QuerySize(url string) (int64, error) {
 		fileSizeStr := string(response.Header.Get("Content-Length"))
 		size, err := strconv.Atoi(fileSizeStr)
 		if err != nil {
-			logger.Error("Convert %v to Int Failed", fileSizeStr)
+			p.supportRange = false
+			logger.Errorf("Convert %v to Int Failed", fileSizeStr)
 			fileSize = 0
 		}
 		fileSize = int64(size)
