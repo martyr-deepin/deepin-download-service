@@ -131,7 +131,7 @@ func (t *Transfer) Download() error {
 
 		//verfiy MD5
 		if 0 != len(t.md5) {
-			fileMD5, _ := utils.SysMd5Sum(t.localFile)
+			fileMD5, _ := utils.SumFileMd5(t.localFile)
 			if t.md5 != fileMD5 {
 				err = fmt.Errorf("VerifyMD5 %v Failed: remote: %v, check: %v, task.file %v, task.url %v",
 					t.ID, fileMD5, t.md5, t.localFile, t.url)
@@ -156,7 +156,7 @@ func (t *Transfer) quickDownload() (sucess bool) {
 	if 0 == len(t.md5) {
 		return false
 	}
-	fileMD5, _ := utils.SysMd5Sum(t.localFile)
+	fileMD5, _ := utils.SumFileMd5(t.localFile)
 	if t.md5 != fileMD5 {
 		return false
 	}
