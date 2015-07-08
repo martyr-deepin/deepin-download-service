@@ -25,10 +25,10 @@ import (
 	"os"
 	"time"
 
-	"pkg.linuxdeepin.com/lib/dbus"
-	dlogger "pkg.linuxdeepin.com/lib/log"
-	"pkg.linuxdeepin.com/service"
-	"pkg.linuxdeepin.com/transfer"
+	"pkg.deepin.io/lib/dbus"
+	dlogger "pkg.deepin.io/lib/log"
+	"pkg.deepin.io/service"
+	"pkg.deepin.io/transfer"
 )
 
 const (

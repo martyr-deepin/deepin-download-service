@@ -3,7 +3,7 @@ package ftp
 import (
 	//	"fmt"
 	"io/ioutil"
-	"pkg.linuxdeepin.com/lib/utils"
+	"pkg.deepin.io/lib/utils"
 	"testing"
 )
 

@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"pkg.linuxdeepin.com/lib/dbus"
+	"pkg.deepin.io/lib/dbus"
 )
 
 const (
