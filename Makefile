@@ -4,10 +4,11 @@ CURDIR=$(shell pwd)
 FIXGOPATH=$(CURDIR):$(GOPATH)
 BIN_PATH=$(CURDIR)/bin
 
-TRANSFER_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/transfer
-FTP_SRC =$(CURDIR)/src/pkg.linuxdeepin.com/transfer
-SERVICE_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/service
-DDAEMON_SRC=$(CURDIR)/src/pkg.linuxdeepin.com/daemon
+SRC_PATH=$(CURDIR)/src/pkg.deepin.io
+TRANSFER_SRC=$(SRC_PATH)/transfer
+FTP_SRC =$(SRC_PATH)/transfer
+SERVICE_SRC=$(SRC_PATH)/service
+DDAEMON_SRC=$(SRC_PATH)/daemon
 
 ifndef USE_GCCGO
     GOBUILD = go build

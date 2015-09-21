@@ -5,13 +5,14 @@ cd $exec_path
 shell_path=`pwd`
 cd $start_path
 
-sudo cp $shell_path/../../src/pkg.linuxdeepin.com/transfer/dbus/com.deepin.api.Transfer.service  /usr/share/dbus-1/system-services/
-sudo cp $shell_path/../../src/pkg.linuxdeepin.com/transfer/dbus/com.deepin.api.Transfer.conf /etc/dbus-1/system.d/
+sudo cp $shell_path/../../src/pkg.deepin.io/transfer/dbus/com.deepin.api.Transfer.service  /usr/share/dbus-1/system-services/
+sudo cp $shell_path/../../src/pkg.deepin.io/transfer/dbus/com.deepin.api.Transfer.conf /etc/dbus-1/system.d/
 sudo killall deepin-download-service
 sudo $shell_path/../../bin/deepin-download-service &
 
 #Start ftp server
 sudo killall vsftpd
+sudo mkdir -p /var/run/vsftpd/empty
 
 sudo rm -fr $shell_path/tmp/public
 mkdir -p $shell_path/tmp/public

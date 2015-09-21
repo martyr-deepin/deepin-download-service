@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"pkg.linuxdeepin.com/lib/dbus"
-	transfer "pkg.linuxdeepin.com/transfer"
+	"pkg.deepin.io/lib/dbus"
+	transfer "pkg.deepin.io/transfer"
 )
 
 const (

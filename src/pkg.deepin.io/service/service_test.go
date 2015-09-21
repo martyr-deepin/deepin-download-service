@@ -77,10 +77,10 @@ func TestDownloadMutiErrorTask(t *testing.T) {
 
 	//This url all not exist to test error sence.
 	urls := []string{
-		"http://errorurl.error.linuxdeepin/app1.deb",
-		"http://errorurl.error.linuxdeepin/app2.deb",
-		"http://errorurl.error.linuxdeepin/app3.deb",
-		"http://errorurl.error.linuxdeepin/app4.deb",
+		"http://packages.linuxdeepin.com/nosuchpage/error/app1.deb",
+		"http://packages.linuxdeepin.com/nosuchpage/error/app2.deb",
+		"http://packages.linuxdeepin.com/nosuchpage/error/app3.deb",
+		"http://packages.linuxdeepin.com/nosuchpage/error/app4.deb",
 	}
 	md5s := []string{
 		"",

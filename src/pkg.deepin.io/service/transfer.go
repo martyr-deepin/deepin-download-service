@@ -1,7 +1,7 @@
 package service
 
 import (
-	transfer "pkg.linuxdeepin.com/transfer"
+	transfer "pkg.deepin.io/transfer"
 )
 
 var _transfer *transfer.TransferManager

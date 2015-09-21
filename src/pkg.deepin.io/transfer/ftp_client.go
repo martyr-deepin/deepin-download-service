@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"pkg.linuxdeepin.com/ftp"
+	"pkg.deepin.io/ftp"
 )
 
 const (
